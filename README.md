@@ -1,5 +1,8 @@
 # Panoptes
 
+[![CI](https://github.com/GeoLang/panoptes/actions/workflows/ci.yml/badge.svg)](https://github.com/GeoLang/panoptes/actions)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+
 **AI Feature Extraction from Geospatial Imagery**
 
 Panoptes is a Rust library and CLI tool for extracting vector features from satellite and aerial imagery using AI-powered segmentation, detection, and change analysis.
