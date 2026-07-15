@@ -26,15 +26,24 @@ pub enum Commands {
         /// Output GeoJSON path.
         #[arg(short, long)]
         output: PathBuf,
-        /// Model to use (buildings, roads, vegetation, landcover).
+        /// Catalog name (buildings, roads, vegetation, landcover) or path to a .onnx model.
         #[arg(short, long, default_value = "buildings")]
         model: String,
+        /// Inference engine: auto (onnx if a model file is available, else threshold), onnx, threshold.
+        #[arg(short, long, default_value = "auto")]
+        engine: String,
         /// Tile size in pixels.
         #[arg(long, default_value = "512")]
         tile_size: usize,
         /// Minimum feature area in pixels.
         #[arg(long, default_value = "10")]
         min_area: f64,
+        /// Confidence threshold for a user ONNX model's foreground class.
+        #[arg(long, default_value = "0.5")]
+        confidence: f32,
+        /// Apply ImageNet normalization for a user ONNX model (else scale to [0,1]).
+        #[arg(long)]
+        imagenet_normalize: bool,
     },
     /// Detect change between two images.
     Change {
@@ -75,9 +84,21 @@ fn main() {
             input,
             output,
             model,
+            engine,
             tile_size,
             min_area,
-        } => commands::segment(&input, &output, &model, tile_size, min_area),
+            confidence,
+            imagenet_normalize,
+        } => commands::segment(
+            &input,
+            &output,
+            &model,
+            &engine,
+            tile_size,
+            min_area,
+            confidence,
+            imagenet_normalize,
+        ),
         Commands::Change {
             before,
             after,

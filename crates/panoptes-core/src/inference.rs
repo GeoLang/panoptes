@@ -4,12 +4,10 @@
 //! In production, implement with ONNX Runtime. Here we provide a
 //! mock/threshold-based implementation for testing.
 
-use ndarray::Array3;
+use ndarray::Array2;
 
 use crate::model::{ModelConfig, TaskType};
-use crate::tensor::{
-    ImageTensor, ProbabilityMap, SegmentationMask, argmax_mask, confidence_map, softmax_chw,
-};
+use crate::tensor::{ImageTensor, ProbabilityMap, SegmentationMask};
 
 /// A bounding box detection result.
 #[derive(Debug, Clone)]
@@ -71,12 +69,12 @@ impl InferenceEngine for ThresholdEngine {
                 let (c, h, w) = (shape[0], shape[1], shape[2]);
                 let num_classes = config.num_classes();
 
-                // Create logits: higher score for class matching dominant channel
-                let mut logits = Array3::zeros((num_classes, h, w));
+                let mut mask = Array2::zeros((h, w));
+                let mut conf = Array2::zeros((h, w));
                 for y in 0..h {
                     for x in 0..w {
-                        // Find the channel with highest value above threshold
-                        let mut best_class = 0;
+                        // pick the channel with highest value above its threshold
+                        let mut best_class = 0usize;
                         let mut best_val = 0.0_f32;
                         for ci in 0..c.min(num_classes) {
                             let val = input[[ci, y, x]];
@@ -86,13 +84,11 @@ impl InferenceEngine for ThresholdEngine {
                                 best_class = ci;
                             }
                         }
-                        logits[[best_class, y, x]] = best_val / 255.0 * 5.0; // scale to logit range
+                        mask[[y, x]] = best_class as u8;
+                        // honest confidence: normalized intensity of the winning channel
+                        conf[[y, x]] = (best_val / 255.0).clamp(0.0, 1.0);
                     }
                 }
-
-                let probs = softmax_chw(&logits);
-                let mask = argmax_mask(&probs);
-                let conf = confidence_map(&probs);
 
                 InferenceResult::Segmentation {
                     mask,

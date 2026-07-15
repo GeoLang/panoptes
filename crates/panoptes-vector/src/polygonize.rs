@@ -4,7 +4,7 @@ use geo_types::{Coord, LineString, Polygon};
 use ndarray::Array2;
 use thiserror::Error;
 
-use panoptes_core::tensor::SegmentationMask;
+use panoptes_core::tensor::{ProbabilityMap, SegmentationMask};
 
 /// Errors during polygonization.
 #[derive(Debug, Error)]
@@ -32,10 +32,14 @@ pub struct VectorFeature {
 ///
 /// Uses a simple contour-tracing approach: finds connected regions of the target class
 /// and generates bounding polygons.
+///
+/// When `confidence` is provided, each feature's confidence is the mean probability over
+/// the region's pixels. When it is `None`, confidence defaults to 1.0.
 pub fn polygonize_class(
     mask: &SegmentationMask,
     class_id: u8,
     min_area: f64,
+    confidence: Option<&ProbabilityMap>,
 ) -> Result<Vec<VectorFeature>, PolygonizeError> {
     let (h, w) = (mask.shape()[0], mask.shape()[1]);
     if h == 0 || w == 0 {
@@ -59,6 +63,7 @@ pub fn polygonize_class(
             let mut min_y = start_y;
             let mut max_y = start_y;
             let mut pixel_count = 0u64;
+            let mut conf_sum = 0.0_f32;
 
             while let Some((y, x)) = stack.pop() {
                 if y >= h || x >= w || visited[[y, x]] || mask[[y, x]] != class_id {
@@ -66,6 +71,9 @@ pub fn polygonize_class(
                 }
                 visited[[y, x]] = true;
                 pixel_count += 1;
+                if let Some(conf) = confidence {
+                    conf_sum += conf[[y, x]];
+                }
 
                 min_x = min_x.min(x);
                 max_x = max_x.max(x);
@@ -119,11 +127,16 @@ pub fn polygonize_class(
                 vec![],
             );
 
+            let feature_confidence = match confidence {
+                Some(_) if pixel_count > 0 => conf_sum / pixel_count as f32,
+                _ => 1.0,
+            };
+
             features.push(VectorFeature {
                 class_id,
                 geometry: polygon,
                 area_px: area,
-                confidence: 1.0, // placeholder
+                confidence: feature_confidence,
             });
         }
     }
@@ -136,10 +149,11 @@ pub fn polygonize_all(
     mask: &SegmentationMask,
     num_classes: usize,
     min_area: f64,
+    confidence: Option<&ProbabilityMap>,
 ) -> Result<Vec<VectorFeature>, PolygonizeError> {
     let mut all_features = Vec::new();
     for class_id in 0..num_classes {
-        let features = polygonize_class(mask, class_id as u8, min_area)?;
+        let features = polygonize_class(mask, class_id as u8, min_area, confidence)?;
         all_features.extend(features);
     }
     Ok(all_features)
@@ -159,10 +173,25 @@ mod tests {
                 mask[[y, x]] = 1u8;
             }
         }
-        let features = polygonize_class(&mask, 1, 1.0).unwrap();
+        let features = polygonize_class(&mask, 1, 1.0, None).unwrap();
         assert_eq!(features.len(), 1);
         assert_eq!(features[0].class_id, 1);
         assert!((features[0].area_px - 25.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_polygonize_mean_confidence() {
+        let mut mask = Array2::zeros((10, 10));
+        let mut conf = Array2::zeros((10, 10));
+        for y in 2..7 {
+            for x in 2..7 {
+                mask[[y, x]] = 1u8;
+                conf[[y, x]] = 0.8;
+            }
+        }
+        let features = polygonize_class(&mask, 1, 1.0, Some(&conf)).unwrap();
+        assert_eq!(features.len(), 1);
+        assert!((features[0].confidence - 0.8).abs() < 1e-5);
     }
 
     #[test]
@@ -170,14 +199,14 @@ mod tests {
         let mut mask = Array2::zeros((10, 10));
         mask[[5, 5]] = 1;
         mask[[5, 6]] = 1;
-        let features = polygonize_class(&mask, 1, 5.0).unwrap();
+        let features = polygonize_class(&mask, 1, 5.0, None).unwrap();
         assert_eq!(features.len(), 0); // Too small
     }
 
     #[test]
     fn test_polygonize_empty() {
         let mask = Array2::zeros((10, 10));
-        let features = polygonize_class(&mask, 1, 1.0).unwrap();
+        let features = polygonize_class(&mask, 1, 1.0, None).unwrap();
         assert_eq!(features.len(), 0);
     }
 }

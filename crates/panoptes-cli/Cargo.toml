@@ -8,6 +8,10 @@ license.workspace = true
 name = "panoptes"
 path = "src/main.rs"
 
+[features]
+default = []
+onnx = ["panoptes-core/onnx"]
+
 [dependencies]
 panoptes-core = { path = "../panoptes-core" }
 panoptes-raster = { path = "../panoptes-raster" }

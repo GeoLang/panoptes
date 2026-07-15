@@ -64,8 +64,13 @@ impl Pipeline {
         // Collect vector features from segmentation results
         let mut all_features = Vec::new();
         for tr in &tile_results {
-            if let InferenceResult::Segmentation { mask, .. } = &tr.inference
-                && let Ok(features) = polygonize_all(mask, self.config.classes.len(), self.min_area)
+            if let InferenceResult::Segmentation { mask, confidence } = &tr.inference
+                && let Ok(features) = polygonize_all(
+                    mask,
+                    self.config.classes.len(),
+                    self.min_area,
+                    Some(confidence),
+                )
             {
                 // Offset features to global coordinates
                 all_features.extend(features.into_iter().map(|mut f| {

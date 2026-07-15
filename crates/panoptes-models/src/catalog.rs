@@ -1,4 +1,8 @@
 //! Model catalog — pre-defined model configurations for common tasks.
+//!
+//! These entries are planned metadata only: their `model_path` is `None` because no
+//! weights are published yet. To run real inference today, pass your own ONNX
+//! segmentation model with the CLI `--model path/to.onnx`.
 
 use panoptes_core::model::{ClassDef, InputSpec, ModelConfig, TaskType};
 
