@@ -41,7 +41,7 @@ pub enum Commands {
         /// Confidence threshold for a user ONNX model's foreground class.
         #[arg(long, default_value = "0.5")]
         confidence: f32,
-        /// Apply ImageNet normalization for a user ONNX model (else scale to [0,1]).
+        /// Apply ImageNet normalization for a user ONNX model (else scale to \[0,1\]).
         #[arg(long)]
         imagenet_normalize: bool,
     },
