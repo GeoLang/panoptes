@@ -89,4 +89,6 @@ cargo test -p panoptes-models --features onnx  # end-to-end ONNX pipeline test
 
 ## License
 
-AGPL-3.0-or-later
+AGPL-3.0-or-later, see [LICENSE](LICENSE).
+
+Copyright (C) 2026 Grok Image Compression Inc.
