@@ -45,7 +45,7 @@ td{color:var(--text)}
 <header>
 <div class="container">
 <h1>👁️ Panoptes</h1>
-<p class="tagline">AI feature extraction from geospatial imagery — segmentation, detection, and change analysis. Pure Rust, GDAL-free.</p>
+<p class="tagline">AI feature extraction from geospatial imagery: segmentation and change analysis. Pure Rust, GDAL-free. Bring your own ONNX model, no weights are bundled.</p>
 <div class="badges">
 <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
 <img src="https://img.shields.io/badge/Rust-2024-orange" alt="Rust">
@@ -58,8 +58,8 @@ td{color:var(--text)}
 </div>
 <div class="stats">
 <div class="stat"><div class="num">5</div><div class="label">Rust crates</div></div>
-<div class="stat"><div class="num">5</div><div class="label">Pre-built models</div></div>
-<div class="stat"><div class="num">0</div><div class="label">C dependencies</div></div>
+<div class="stat"><div class="num">44</div><div class="label">Tests</div></div>
+<div class="stat"><div class="num">0</div><div class="label">Bundled model weights</div></div>
 <div class="stat"><div class="num">∞</div><div class="label">Image size (tiled)</div></div>
 </div>
 </div>
@@ -73,20 +73,20 @@ td{color:var(--text)}
 <h3>🧠 Semantic Segmentation</h3>
 <ul>
 <li>Per-pixel classification</li>
-<li>Buildings, roads, vegetation, water</li>
 <li>Multi-class output with confidence</li>
-<li>ONNX model inference</li>
-<li>Configurable class mappings</li>
+<li>ONNX Runtime inference</li>
+<li>User-supplied <code>.onnx</code> model</li>
+<li>Threshold heuristic for smoke tests</li>
 </ul>
 </div>
 <div class="card">
-<h3>🎯 Object Detection</h3>
+<h3>🛰️ Satellite Preprocessing</h3>
 <ul>
-<li>Bounding-box feature extraction</li>
-<li>Discrete object detection</li>
-<li>Confidence thresholding</li>
-<li>Non-maximum suppression</li>
-<li>Multi-scale detection</li>
+<li>DN to top-of-atmosphere reflectance</li>
+<li>DOS1 atmospheric correction</li>
+<li>Brovey pan-sharpening</li>
+<li>NDVI, NDWI, EVI, NBR, SAVI indices</li>
+<li>Band compositing</li>
 </ul>
 </div>
 <div class="card">
@@ -115,17 +115,17 @@ td{color:var(--text)}
 <li>Automatic polygonization</li>
 <li>Douglas-Peucker simplification</li>
 <li>GeoJSON export</li>
-<li>Feature property annotation</li>
-<li>Topology-preserving output</li>
+<li>class_id, area_px, confidence properties</li>
+<li>Pixel-space coordinates, no CRS yet</li>
 </ul>
 </div>
 <div class="card">
 <h3>📊 Quality Metrics</h3>
 <ul>
 <li>Intersection over Union (IoU)</li>
+<li>Mean IoU across classes</li>
 <li>Pixel accuracy scoring</li>
-<li>Per-class F1 scores</li>
-<li>Confidence calibration</li>
+<li>Per-polygon confidence from the model</li>
 <li>Evaluation against ground truth</li>
 </ul>
 </div>
@@ -133,30 +133,29 @@ td{color:var(--text)}
 <h3>☁️ Cloud Optimized GeoTIFF</h3>
 <ul>
 <li>COG tile-based reading</li>
-<li>Range request support</li>
-<li>Lazy loading of overview levels</li>
-<li>No full-file download required</li>
-<li>HTTP/S3 source support</li>
+<li>TIFF IFD and tile offset parsing</li>
+<li>Overview pyramid levels</li>
+<li>Local files only, no HTTP or S3 client</li>
+<li>No geotransform parsing yet</li>
 </ul>
 </div>
 <div class="card">
-<h3>🔀 Distributed Processing</h3>
+<h3>🔀 Parallel Processing</h3>
 <ul>
-<li>Tile-parallel execution</li>
-<li>Work queue distribution</li>
-<li>Result aggregation</li>
-<li>Fault tolerance</li>
-<li>Progress reporting</li>
+<li>Tile-parallel inference via rayon</li>
+<li>Result aggregation across tiles</li>
+<li>Configurable tile size and overlap</li>
+<li>Single process, not a cluster</li>
 </ul>
 </div>
 <div class="card">
 <h3>🔍 Explainability</h3>
 <ul>
-<li>Activation visualization</li>
+<li>Occlusion sensitivity maps</li>
+<li>Saliency map from confidence</li>
 <li>Per-pixel confidence maps</li>
-<li>Class probability output</li>
-<li>Decision boundary inspection</li>
-<li>Model introspection tools</li>
+<li>Heatmap overlay on the source image</li>
+<li>Library only, no CLI command</li>
 </ul>
 </div>
 </div>
@@ -165,17 +164,20 @@ td{color:var(--text)}
 
 <section>
 <div class="container">
-<h2>Available Models</h2>
+<h2>Planned Models</h2>
+<p>The catalog holds metadata only: input size, classes, and thresholds. <strong>No weights
+are published yet</strong>, so naming one of these falls back to the threshold heuristic.
+Pass <code>--model path/to/model.onnx</code> to run your own segmentation model.</p>
 <table>
 <thead>
-<tr><th>Model</th><th>Task</th><th>Classes</th></tr>
+<tr><th>Model</th><th>Task</th><th>Classes</th><th>Status</th></tr>
 </thead>
 <tbody>
-<tr><td><code>panoptes-buildings-v1</code></td><td>Segmentation</td><td>background, building</td></tr>
-<tr><td><code>panoptes-roads-v1</code></td><td>Segmentation</td><td>background, road</td></tr>
-<tr><td><code>panoptes-landcover-v1</code></td><td>Segmentation</td><td>water, vegetation, bare_soil, built_up, agriculture</td></tr>
-<tr><td><code>panoptes-vegetation-v1</code></td><td>Segmentation</td><td>non_vegetation, trees, shrubs, grass</td></tr>
-<tr><td><code>panoptes-change-v1</code></td><td>Change Detection</td><td>no_change, change</td></tr>
+<tr><td><code>panoptes-buildings-v1</code></td><td>Segmentation</td><td>background, building</td><td>planned</td></tr>
+<tr><td><code>panoptes-roads-v1</code></td><td>Segmentation</td><td>background, road</td><td>planned</td></tr>
+<tr><td><code>panoptes-landcover-v1</code></td><td>Segmentation</td><td>water, vegetation, bare_soil, built_up, agriculture</td><td>planned</td></tr>
+<tr><td><code>panoptes-vegetation-v1</code></td><td>Segmentation</td><td>non_vegetation, trees, shrubs, grass</td><td>planned</td></tr>
+<tr><td><code>panoptes-change-v1</code></td><td>Change Detection</td><td>no_change, change</td><td>planned</td></tr>
 </tbody>
 </table>
 </div>
@@ -202,13 +204,13 @@ td{color:var(--text)}
 <section>
 <div class="container">
 <h2>Quick Start</h2>
-<pre><code># Segment buildings from an aerial image
-panoptes segment --input image.tif --output buildings.geojson --model buildings
+<pre><code># Segment an aerial image with your own ONNX model
+panoptes segment --input image.tif --output buildings.geojson --model path/to/model.onnx
 
 # Detect changes between two dates
 panoptes change --before 2022.tif --after 2024.tif --output changes.geojson
 
-# List available models
+# List catalog models (metadata only, no weights)
 panoptes models
 
 # Evaluate prediction accuracy
