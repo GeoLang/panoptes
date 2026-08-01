@@ -99,7 +99,7 @@ cargo build --release --features onnx -p panoptes-cli   # with ONNX inference
 ## Testing
 
 ```bash
-cargo test                                     # 44 tests, no ONNX
+cargo test                                     # 45 tests, no ONNX
 cargo test -p panoptes-models --features onnx  # end-to-end ONNX pipeline test
 ```
 
