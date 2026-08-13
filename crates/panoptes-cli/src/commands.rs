@@ -14,6 +14,9 @@ use panoptes_raster::window::WindowConfig;
 use panoptes_vector::geojson_io::to_geojson_string;
 use panoptes_vector::polygonize::polygonize_class;
 
+const README_MODEL_SECTION: &str =
+    "https://github.com/GeoLang/panoptes#experimental-no-trained-weights-are-published";
+
 /// Map a catalog model name to its configuration.
 fn catalog_config(model: &str) -> Option<ModelConfig> {
     match model {
@@ -85,7 +88,7 @@ fn resolve_model(
             Ok((config, Some(path)))
         } else {
             Err(format!(
-                "Unknown model '{model}': not a catalog name and not an existing file.\nRun `panoptes models` to list catalog models, or pass a path to an .onnx file."
+                "Unknown model '{model}': not a catalog name and not an existing file.\nPanoptes publishes no weights, so you must pass a path to your own .onnx file.\nSee {README_MODEL_SECTION}"
             ))
         }
     }
@@ -125,7 +128,10 @@ fn run_segmentation(
                     }
                 },
                 None => {
-                    eprintln!("--engine onnx requires an ONNX model; pass --model path/to.onnx");
+                    eprintln!(
+                        "--engine onnx needs an ONNX model file, and no weights exist for '{}'.\nPass --model path/to.onnx with a model you supply.\nSee {README_MODEL_SECTION}",
+                        pipeline.config.name
+                    );
                     std::process::exit(1);
                 }
             }
@@ -140,6 +146,13 @@ fn run_segmentation(
                 "note: an ONNX model was provided but this build lacks ONNX support; using threshold engine"
             );
         }
+    }
+
+    if engine == "auto" && onnx_path.is_none() {
+        eprintln!(
+            "warning: no weights are published for '{}', so nothing was segmented by a model.\nFalling back to the threshold heuristic, whose output is a smoke test of the tiling and\npolygonization path, not a prediction about this image. Pass --model path/to.onnx to run\na model you supply. See {README_MODEL_SECTION}",
+            pipeline.config.name
+        );
     }
 
     let eng = ThresholdEngine::new(vec![128.0]);
@@ -186,6 +199,12 @@ pub fn segment(
 
     println!("Processed {} tiles", result.tile_results.len());
     println!("Extracted {} features", result.features.len());
+
+    if result.tile_results.is_empty() {
+        eprintln!(
+            "warning: the image is smaller than --tile-size {tile_size}, so no tile was processed and the output is empty"
+        );
+    }
 
     let geojson = to_geojson_string(&result.features);
     if let Err(e) = std::fs::write(output, &geojson) {
@@ -267,9 +286,11 @@ pub fn list_models() {
         }
         println!();
     }
-    println!("These entries are metadata only; no weights are published yet.");
-    println!("To run inference today, pass your own ONNX segmentation model:");
+    println!("These entries are metadata only, no weights exist for any of them.");
+    println!("Naming one runs the threshold heuristic, not segmentation.");
+    println!("To run inference, pass an ONNX segmentation model you supply:");
     println!("  panoptes segment --input img.png --output out.geojson --model path/to/model.onnx");
+    println!("See {README_MODEL_SECTION}");
 }
 
 pub fn evaluate(prediction: &Path, ground_truth: &Path, num_classes: usize) {

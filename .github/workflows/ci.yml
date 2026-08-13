@@ -29,6 +29,31 @@ jobs:
       - name: Test
         run: cargo test --all
 
+  onnx:
+    runs-on: ubuntu-latest
+    env:
+      ONNXRUNTIME_VERSION: 1.20.1
+      ONNXRUNTIME_SHA256: 67db4dc1561f1e3fd42e619575c82c601ef89849afc7ea85a003abbac1a1a105
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # ort loads the runtime with dlopen, so nothing ships it: CI has to supply one
+      - name: Install ONNX Runtime
+        run: |
+          archive="onnxruntime-linux-x64-$ONNXRUNTIME_VERSION.tgz"
+          curl -sSfLO "https://github.com/microsoft/onnxruntime/releases/download/v$ONNXRUNTIME_VERSION/$archive"
+          echo "$ONNXRUNTIME_SHA256  $archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/onnxruntime"
+          tar xzf "$archive" -C "$RUNNER_TEMP/onnxruntime" --strip-components=1
+          echo "ORT_DYLIB_PATH=$RUNNER_TEMP/onnxruntime/lib/libonnxruntime.so" >> "$GITHUB_ENV"
+      - name: Clippy
+        run: cargo clippy --all-targets --features onnx -- -D warnings
+      - name: Test
+        run: cargo test --all --features onnx
+
   deny:
     runs-on: ubuntu-latest
     steps:

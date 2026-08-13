@@ -8,4 +8,4 @@ edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/GeoLang/panoptes"
 authors = ["GeoLang <tiletopia@proton.me>"]
-description = "Geospatial monitoring and change detection"
+description = "Experimental AI feature extraction from geospatial imagery, no model weights included"

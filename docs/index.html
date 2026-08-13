@@ -13,6 +13,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 header{border-bottom:1px solid var(--border);padding:64px 0 40px;text-align:center}
 header h1{font-size:3.5rem;color:var(--heading);margin-bottom:12px}
 header .tagline{font-size:1.3rem;color:var(--muted);max-width:750px;margin:0 auto}
+header .notice{margin:20px auto 0;max-width:750px;background:var(--card);border:1px solid var(--border);border-left:4px solid #d29922;border-radius:6px;padding:14px 18px;font-size:.95rem;text-align:left}
 .badges{margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .badges img{height:24px}
 .hero{display:flex;gap:16px;justify-content:center;margin-top:28px;flex-wrap:wrap}
@@ -45,7 +46,8 @@ td{color:var(--text)}
 <header>
 <div class="container">
 <h1>👁️ Panoptes</h1>
-<p class="tagline">AI feature extraction from geospatial imagery: segmentation and change analysis. Pure Rust, GDAL-free. Bring your own ONNX model, no weights are bundled.</p>
+<p class="tagline">AI feature extraction from geospatial imagery: segmentation and change analysis. Pure Rust, GDAL-free.</p>
+<p class="notice"><strong>Experimental.</strong> No trained weights ship with panoptes and none are published, so segmentation does not work out of the box. You supply an ONNX segmentation model and pass it with <code>--model path/to/model.onnx</code>. <a href="https://github.com/GeoLang/panoptes#experimental-no-trained-weights-are-published">What you need to supply</a>.</p>
 <div class="badges">
 <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
 <img src="https://img.shields.io/badge/Rust-2024-orange" alt="Rust">
@@ -94,7 +96,7 @@ td{color:var(--text)}
 <h3>🔄 Change Detection</h3>
 <ul>
 <li>Temporal image comparison</li>
-<li>Before/after analysis</li>
+<li>Pixel differencing, not a model</li>
 <li>Change magnitude scoring</li>
 <li>Multi-resolution comparison</li>
 <li>GeoJSON change polygons</li>

@@ -1,8 +1,8 @@
 //! Inference engine — model loading and prediction execution.
 //!
-//! This module provides a trait-based inference abstraction.
-//! In production, implement with ONNX Runtime. Here we provide a
-//! mock/threshold-based implementation for testing.
+//! This module provides a trait-based inference abstraction plus a threshold engine that
+//! stands in when no model file is available. Real inference is `crate::onnx::OnnxEngine`,
+//! behind the `onnx` feature.
 
 use ndarray::Array2;
 
@@ -41,8 +41,9 @@ pub trait InferenceEngine: Send + Sync {
     fn name(&self) -> &str;
 }
 
-/// Threshold-based inference engine for testing and simple use cases.
-/// Uses per-channel thresholding to simulate segmentation.
+/// Threshold-based stand-in engine, for smoke-testing the pipeline when no model is
+/// available. Per-channel thresholding, no learned model, so its output says nothing
+/// about the imagery.
 pub struct ThresholdEngine {
     /// Per-channel thresholds — pixels above threshold are classified as that channel's class.
     pub thresholds: Vec<f32>,
