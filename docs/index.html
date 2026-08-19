@@ -63,7 +63,6 @@ td{color:var(--text)}
 <div class="stat"><div class="num">5</div><div class="label">Rust crates</div></div>
 <div class="stat"><div class="num">44</div><div class="label">Tests</div></div>
 <div class="stat"><div class="num">0</div><div class="label">Bundled model weights</div></div>
-<div class="stat"><div class="num">∞</div><div class="label">Image size (tiled)</div></div>
 </div>
 </div>
 </header>
@@ -76,8 +75,8 @@ td{color:var(--text)}
 <h3>🧠 Semantic Segmentation</h3>
 <ul>
 <li>Per-pixel classification</li>
-<li>Multi-class output with confidence</li>
-<li>ONNX Runtime inference</li>
+<li>Multi-class output with confidence, in the engine only: the CLI configures any <code>--model</code> as two-class, so classes 2..K are dropped</li>
+<li>ONNX Runtime inference, needing <code>--features onnx</code> and a system libonnxruntime. The release workflow builds without the feature, so published binaries cannot run ONNX</li>
 <li>User-supplied <code>.onnx</code> model</li>
 <li>Threshold heuristic for smoke tests</li>
 </ul>
@@ -90,6 +89,7 @@ td{color:var(--text)}
 <li>Brovey pan-sharpening</li>
 <li>NDVI, NDWI, EVI, NBR, SAVI indices</li>
 <li>Band compositing</li>
+<li>Library only and unreachable: nothing constructs a <code>SatelliteImage</code>, and the file reader converts every image to 3-channel 8-bit RGB, so no NIR or SWIR band can enter. The <code>Sensor</code> enum carries no calibration coefficients</li>
 </ul>
 </div>
 <div class="card">
@@ -98,25 +98,23 @@ td{color:var(--text)}
 <li>Temporal image comparison</li>
 <li>Pixel differencing, not a model</li>
 <li>Change magnitude scoring</li>
-<li>Multi-resolution comparison</li>
+<li>Single scale, no pyramid</li>
 <li>GeoJSON change polygons</li>
 </ul>
 </div>
 <div class="card">
-<h3>🖼️ Multi-Resolution Processing</h3>
+<h3>🖼️ Tiled Processing</h3>
 <ul>
-<li>Image pyramid generation</li>
-<li>Scale-invariant detection</li>
 <li>Sliding window with overlap</li>
 <li>Configurable tile size</li>
-<li>Efficient memory management</li>
+<li>Whole tiles only, edge remainders dropped</li>
+<li>Tiling bounds the model input, not memory: the whole image is decoded to a full-size f32 array first</li>
 </ul>
 </div>
 <div class="card">
 <h3>📐 Vector Output</h3>
 <ul>
-<li>Automatic polygonization</li>
-<li>Douglas-Peucker simplification</li>
+<li>Automatic polygonization, one axis-aligned bounding box per connected component, not a feature outline</li>
 <li>GeoJSON export</li>
 <li>class_id, area_px, confidence properties</li>
 <li>Pixel-space coordinates, no CRS yet</li>
@@ -135,20 +133,22 @@ td{color:var(--text)}
 <div class="card">
 <h3>☁️ Cloud Optimized GeoTIFF</h3>
 <ul>
-<li>COG tile-based reading</li>
 <li>TIFF IFD and tile offset parsing</li>
 <li>Overview pyramid levels</li>
+<li>A tile read returns raw undecoded bytes: no decompression, no pixel decode</li>
 <li>Local files only, no HTTP or S3 client</li>
 <li>No geotransform parsing yet</li>
+<li>Unreachable from the CLI, which loads images through the <code>image</code> crate instead</li>
 </ul>
 </div>
 <div class="card">
 <h3>🔀 Parallel Processing</h3>
 <ul>
 <li>Tile-parallel inference via rayon</li>
-<li>Result aggregation across tiles</li>
+<li>Result aggregation across tiles, blending the overlap</li>
 <li>Configurable tile size and overlap</li>
 <li>Single process, not a cluster</li>
+<li>Library only, no CLI command: the CLI runs a sequential map that polygonizes each tile on its own</li>
 </ul>
 </div>
 <div class="card">
@@ -190,7 +190,7 @@ Pass <code>--model path/to/model.onnx</code> to run your own segmentation model.
 <div class="container">
 <h2>Architecture</h2>
 <pre><code>┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  panoptes-raster │────▶│  panoptes-core   │────▶│  panoptes-models │
+│  panoptes-raster │◀────│  panoptes-core   │────▶│  panoptes-models │
 │ (tile I/O, COG)  │     │ (tensor, ONNX)   │     │  (catalog, pipe) │
 └──────────────────┘     └──────────────────┘     └──────────────────┘
                                 │

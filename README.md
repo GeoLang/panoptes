@@ -5,7 +5,7 @@
 
 **AI Feature Extraction from Geospatial Imagery**
 
-Panoptes is a Rust library and CLI tool for extracting vector features from satellite and aerial imagery. Segmentation runs an ONNX model you supply, change detection is pixel differencing.
+Panoptes is a Rust library and CLI tool for segmenting satellite and aerial imagery and writing the result out as vectors. Segmentation runs an ONNX model you supply, change detection is pixel differencing. The vectors are bounding boxes of connected components, not feature outlines, see [Limitations](#limitations).
 
 ## Experimental: no trained weights are published
 
@@ -25,9 +25,8 @@ its output is not a prediction about the imagery.
 
 - **Semantic Segmentation** — Per-pixel classification, driven by a user-supplied ONNX model
 - **Change Detection** — Temporal comparison by pixel differencing, no model involved
-- **Vector Output** — Automatic polygonization of predictions to GeoJSON, with Douglas-Peucker simplification
-- **Multi-Resolution Analysis** — Image pyramid processing for scale-invariant detection
-- **Sliding Window** — Efficient tiled processing of large imagery with configurable overlap
+- **Vector Output** — Automatic polygonization of predictions to GeoJSON, as one bounding box per connected component
+- **Sliding Window** — Tiled processing with configurable overlap, so the model input is bounded whatever the image size
 - **Quality Metrics** — IoU, mean IoU, and pixel accuracy against ground truth
 - **GDAL-Free** — Pure Rust image decoding, no system dependencies for the core build
 
@@ -103,13 +102,34 @@ rest are dropped. Both classes are written to the GeoJSON, background included, 
 
 - **No trained weights, so there is no accuracy number for anything here.** Nothing in
   this repo has been evaluated against a benchmark dataset.
+- **Every polygon written is an axis-aligned rectangle.** Polygonization flood-fills
+  connected components and emits each one's 5-point bounding box, so no GeoJSON panoptes
+  writes traces a feature outline. Douglas-Peucker simplification is implemented in
+  `panoptes-vector` and nothing calls it.
+- There is no multi-resolution or scale-invariant detection. The pyramid builder in
+  `panoptes-raster` has no caller: inference runs at one scale and change detection is a
+  single-scale pixel difference.
+- Tiling bounds the model input, not memory. Loading decodes the whole file into a
+  full-image f32 array before any tiling, so a 50k x 50k image needs roughly 30 GB.
+- Tile-parallel inference across rayon, with overlap blending on merge, exists in the
+  library and has no caller outside its own test. The CLI path is a sequential map that
+  polygonizes each tile on its own.
 - Tiles are whole tiles only. An image smaller than `--tile-size` in either dimension
   yields no tiles at all, and edge remainders are dropped rather than padded.
 - **Output coordinates are pixel space, not world coordinates.** Nothing reads a
   geotransform, so the GeoJSON carries no CRS and its coordinates are image row/column
   values. Reprojecting to real-world coordinates is on you for now.
-- COG reading is local-file only. There is no HTTP or S3 client, so remote range
-  requests are not supported.
+- COG reading does not decode pixels and nothing reaches it. The module parses the IFD
+  chain and tile offsets, and a tile read hands back the raw bytes: the compression field
+  is recorded and never acted on, so there is no decompression and no pixel decode. It is
+  local-file only too, with no HTTP or S3 client. Image loading goes through the `image`
+  crate instead, so the CLI never enters this path.
+- Satellite preprocessing (DN to TOA, DOS1, pan-sharpening, the spectral indices, band
+  compositing) is unreachable. `SatelliteImage` is constructed nowhere in the workspace,
+  including tests, and the only file reader calls `to_rgb8()`, so every image becomes
+  3-channel 8-bit RGB and no NIR or SWIR band can enter. The `Sensor` enum is a bare tag
+  with no calibration coefficients, whatever `satellite.rs`'s rustdoc says about
+  Sentinel-2 and Landsat 8/9.
 - Object detection exists as a library result type, produced only by the threshold
   heuristic. There is no detection CLI command and no non-maximum suppression.
 - `panoptes-raster::explain` provides occlusion sensitivity and a saliency map derived
