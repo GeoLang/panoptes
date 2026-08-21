@@ -1,5 +1,7 @@
 //! Polygonization — convert segmentation masks to vector polygons.
 
+use std::collections::HashSet;
+
 use geo_types::{Coord, LineString, Polygon};
 use ndarray::Array2;
 use thiserror::Error;
@@ -30,8 +32,8 @@ pub struct VectorFeature {
 
 /// Extract polygon boundaries for a specific class from a segmentation mask.
 ///
-/// Uses a simple contour-tracing approach: finds connected regions of the target class
-/// and generates bounding polygons.
+/// Finds 4-connected regions of the target class and traces the outline of each
+/// component (union of unit pixel squares).
 ///
 /// When `confidence` is provided, each feature's confidence is the mean probability over
 /// the region's pixels. When it is `None`, confidence defaults to 1.0.
@@ -56,13 +58,8 @@ pub fn polygonize_class(
                 continue;
             }
 
-            // Flood-fill to find connected component
             let mut stack = vec![(start_y, start_x)];
-            let mut min_x = start_x;
-            let mut max_x = start_x;
-            let mut min_y = start_y;
-            let mut max_y = start_y;
-            let mut pixel_count = 0u64;
+            let mut pixels = Vec::new();
             let mut conf_sum = 0.0_f32;
 
             while let Some((y, x)) = stack.pop() {
@@ -70,15 +67,10 @@ pub fn polygonize_class(
                     continue;
                 }
                 visited[[y, x]] = true;
-                pixel_count += 1;
+                pixels.push((x, y));
                 if let Some(conf) = confidence {
                     conf_sum += conf[[y, x]];
                 }
-
-                min_x = min_x.min(x);
-                max_x = max_x.max(x);
-                min_y = min_y.min(y);
-                max_y = max_y.max(y);
 
                 // 4-connectivity
                 if y > 0 {
@@ -95,40 +87,15 @@ pub fn polygonize_class(
                 }
             }
 
-            let area = pixel_count as f64;
+            let area = pixels.len() as f64;
             if area < min_area {
                 continue;
             }
 
-            // Create bounding polygon from the convex hull approximation (bbox for now)
-            let polygon = Polygon::new(
-                LineString::from(vec![
-                    Coord {
-                        x: min_x as f64,
-                        y: min_y as f64,
-                    },
-                    Coord {
-                        x: max_x as f64 + 1.0,
-                        y: min_y as f64,
-                    },
-                    Coord {
-                        x: max_x as f64 + 1.0,
-                        y: max_y as f64 + 1.0,
-                    },
-                    Coord {
-                        x: min_x as f64,
-                        y: max_y as f64 + 1.0,
-                    },
-                    Coord {
-                        x: min_x as f64,
-                        y: min_y as f64,
-                    },
-                ]),
-                vec![],
-            );
+            let polygon = outline_polygon(&pixels);
 
             let feature_confidence = match confidence {
-                Some(_) if pixel_count > 0 => conf_sum / pixel_count as f32,
+                Some(_) if !pixels.is_empty() => conf_sum / pixels.len() as f32,
                 _ => 1.0,
             };
 
@@ -142,6 +109,97 @@ pub fn polygonize_class(
     }
 
     Ok(features)
+}
+
+fn outline_polygon(pixels: &[(usize, usize)]) -> Polygon<f64> {
+    let set: HashSet<(i32, i32)> = pixels.iter().map(|&(x, y)| (x as i32, y as i32)).collect();
+
+    let mut edges: HashSet<(i32, i32, i32, i32)> = HashSet::new();
+    for &(x, y) in &set {
+        if !set.contains(&(x, y - 1)) {
+            edges.insert((x, y, x + 1, y));
+        }
+        if !set.contains(&(x + 1, y)) {
+            edges.insert((x + 1, y, x + 1, y + 1));
+        }
+        if !set.contains(&(x, y + 1)) {
+            edges.insert((x + 1, y + 1, x, y + 1));
+        }
+        if !set.contains(&(x - 1, y)) {
+            edges.insert((x, y + 1, x, y));
+        }
+    }
+
+    let Some(&(start_x, start_y)) = set.iter().min_by_key(|p| (p.1, p.0)) else {
+        return Polygon::new(LineString::from(Vec::<Coord<f64>>::new()), vec![]);
+    };
+
+    let mut cx = start_x;
+    let mut cy = start_y;
+    let mut dx = 1_i32;
+    let mut dy = 0_i32;
+    let start_edge = (cx, cy, dx, dy);
+    let mut ring = Vec::new();
+
+    for _ in 0..edges.len() {
+        ring.push((cx, cy));
+        cx += dx;
+        cy += dy;
+        let Some((ndx, ndy)) = [(-dy, dx), (dx, dy), (dy, -dx), (-dx, -dy)]
+            .into_iter()
+            .find(|&(ndx, ndy)| edges.contains(&(cx, cy, cx + ndx, cy + ndy)))
+        else {
+            break;
+        };
+        dx = ndx;
+        dy = ndy;
+        if (cx, cy, dx, dy) == start_edge {
+            break;
+        }
+    }
+    if let Some(&first) = ring.first()
+        && ring.last() != Some(&first)
+    {
+        ring.push(first);
+    }
+
+    let ring = collapse_collinear(ring);
+    let coords: Vec<Coord<f64>> = ring
+        .into_iter()
+        .map(|(x, y)| Coord {
+            x: x as f64,
+            y: y as f64,
+        })
+        .collect();
+    Polygon::new(LineString::from(coords), vec![])
+}
+
+fn collapse_collinear(mut ring: Vec<(i32, i32)>) -> Vec<(i32, i32)> {
+    if ring.len() >= 2 && ring.first() == ring.last() {
+        ring.pop();
+    }
+    let n = ring.len();
+    if n < 3 {
+        if let Some(&first) = ring.first() {
+            ring.push(first);
+        }
+        return ring;
+    }
+    let mut out = Vec::with_capacity(n + 1);
+    for i in 0..n {
+        let prev = ring[(i + n - 1) % n];
+        let curr = ring[i];
+        let next = ring[(i + 1) % n];
+        let col_x = prev.0 == curr.0 && curr.0 == next.0;
+        let col_y = prev.1 == curr.1 && curr.1 == next.1;
+        if !col_x && !col_y {
+            out.push(curr);
+        }
+    }
+    if let Some(&first) = out.first() {
+        out.push(first);
+    }
+    out
 }
 
 /// Extract polygons for all classes in a mask.
@@ -162,6 +220,7 @@ pub fn polygonize_all(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use geo::Area;
     use ndarray::Array2;
 
     #[test]
@@ -177,6 +236,8 @@ mod tests {
         assert_eq!(features.len(), 1);
         assert_eq!(features[0].class_id, 1);
         assert!((features[0].area_px - 25.0).abs() < 1e-5);
+        assert!((features[0].geometry.unsigned_area() - 25.0).abs() < 1e-5);
+        assert_eq!(features[0].geometry.exterior().0.len(), 5);
     }
 
     #[test]
@@ -208,5 +269,30 @@ mod tests {
         let mask = Array2::zeros((10, 10));
         let features = polygonize_class(&mask, 1, 1.0, None).unwrap();
         assert_eq!(features.len(), 0);
+    }
+
+    #[test]
+    fn test_polygonize_l_shape_is_not_bbox() {
+        let mut mask = Array2::zeros((10, 10));
+        for y in 2..5 {
+            mask[[y, 2]] = 1u8;
+        }
+        for x in 2..5 {
+            mask[[4, x]] = 1u8;
+        }
+        let features = polygonize_class(&mask, 1, 1.0, None).unwrap();
+        assert_eq!(features.len(), 1);
+        assert!((features[0].area_px - 5.0).abs() < 1e-5);
+
+        let poly_area = features[0].geometry.unsigned_area();
+        assert!(
+            (poly_area - 5.0).abs() < 1e-5,
+            "polygon area {poly_area} should match pixel count, not bbox area 9"
+        );
+        let unique_verts = features[0].geometry.exterior().0.len().saturating_sub(1);
+        assert!(
+            unique_verts > 4,
+            "L-shape outline must have more than 4 vertices, got {unique_verts}"
+        );
     }
 }
