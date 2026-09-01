@@ -47,7 +47,7 @@ td{color:var(--text)}
 <div class="container">
 <h1>👁️ Panoptes</h1>
 <p class="tagline">AI feature extraction from geospatial imagery: segmentation and change analysis. Pure Rust, GDAL-free.</p>
-<p class="notice"><strong>Experimental.</strong> No trained weights ship with panoptes and none are published, so segmentation does not work out of the box. You supply an ONNX segmentation model and pass it with <code>--model path/to/model.onnx</code>. <a href="https://github.com/GeoLang/panoptes#experimental-no-trained-weights-are-published">What you need to supply</a>.</p>
+<p class="notice"><strong>Experimental.</strong> Building segmentation weights are published as a release asset you download; roads, landcover, vegetation and change have none, so for those you supply an ONNX model and pass it with <code>--model path/to/model.onnx</code>. <a href="https://github.com/GeoLang/panoptes#model-weights">Model weights</a>.</p>
 <div class="badges">
 <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
 <img src="https://img.shields.io/badge/Rust-2024-orange" alt="Rust">
@@ -61,8 +61,8 @@ td{color:var(--text)}
 </div>
 <div class="stats">
 <div class="stat"><div class="num">5</div><div class="label">Rust crates</div></div>
-<div class="stat"><div class="num">44</div><div class="label">Tests</div></div>
-<div class="stat"><div class="num">0</div><div class="label">Bundled model weights</div></div>
+<div class="stat"><div class="num">45</div><div class="label">Tests</div></div>
+<div class="stat"><div class="num">1</div><div class="label">Published model weights</div></div>
 </div>
 </div>
 </header>
@@ -114,7 +114,7 @@ td{color:var(--text)}
 <div class="card">
 <h3>📐 Vector Output</h3>
 <ul>
-<li>Automatic polygonization, one axis-aligned bounding box per connected component, not a feature outline</li>
+<li>Automatic polygonization, one traced pixel-edge outline per connected component, holes filled</li>
 <li>GeoJSON export</li>
 <li>class_id, area_px, confidence properties</li>
 <li>Pixel-space coordinates, no CRS yet</li>
@@ -167,16 +167,18 @@ td{color:var(--text)}
 
 <section>
 <div class="container">
-<h2>Planned Models</h2>
-<p>The catalog holds metadata only: input size, classes, and thresholds. <strong>No weights
-are published yet</strong>, so naming one of these falls back to the threshold heuristic.
-Pass <code>--model path/to/model.onnx</code> to run your own segmentation model.</p>
+<h2>Catalog Models</h2>
+<p>Building weights are published as the <code>panoptes-buildings-v1.onnx</code> asset of the
+<a href="https://github.com/GeoLang/panoptes/releases/tag/weights-buildings-v1">weights-buildings-v1 release</a>,
+downloaded into the working directory. The other entries hold metadata only, input size, classes
+and thresholds, so naming one falls back to the threshold heuristic. Pass
+<code>--model path/to/model.onnx</code> to run your own segmentation model.</p>
 <table>
 <thead>
 <tr><th>Model</th><th>Task</th><th>Classes</th><th>Status</th></tr>
 </thead>
 <tbody>
-<tr><td><code>panoptes-buildings-v1</code></td><td>Segmentation</td><td>background, building</td><td>planned</td></tr>
+<tr><td><code>panoptes-buildings-v1</code></td><td>Segmentation</td><td>background, building</td><td>published</td></tr>
 <tr><td><code>panoptes-roads-v1</code></td><td>Segmentation</td><td>background, road</td><td>planned</td></tr>
 <tr><td><code>panoptes-landcover-v1</code></td><td>Segmentation</td><td>water, vegetation, bare_soil, built_up, agriculture</td><td>planned</td></tr>
 <tr><td><code>panoptes-vegetation-v1</code></td><td>Segmentation</td><td>non_vegetation, trees, shrubs, grass</td><td>planned</td></tr>
@@ -207,13 +209,16 @@ Pass <code>--model path/to/model.onnx</code> to run your own segmentation model.
 <section>
 <div class="container">
 <h2>Quick Start</h2>
-<pre><code># Segment an aerial image with your own ONNX model
-panoptes segment --input image.tif --output buildings.geojson --model path/to/model.onnx
+<pre><code># Segment buildings, with panoptes-buildings-v1.onnx downloaded into this directory
+panoptes segment --input image.tif --output buildings.geojson --model buildings
+
+# Or segment with your own ONNX model
+panoptes segment --input image.tif --output out.geojson --model path/to/model.onnx
 
 # Detect changes between two dates
 panoptes change --before 2022.tif --after 2024.tif --output changes.geojson
 
-# List catalog models (metadata only, no weights)
+# List catalog models and where their weights come from
 panoptes models
 
 # Evaluate prediction accuracy

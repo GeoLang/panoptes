@@ -14,8 +14,10 @@ use panoptes_raster::window::WindowConfig;
 use panoptes_vector::geojson_io::to_geojson_string;
 use panoptes_vector::polygonize::polygonize_class;
 
-const README_MODEL_SECTION: &str =
-    "https://github.com/GeoLang/panoptes#experimental-no-trained-weights-are-published";
+const README_MODEL_SECTION: &str = "https://github.com/GeoLang/panoptes#model-weights";
+
+const BUILDINGS_WEIGHTS_RELEASE: &str =
+    "https://github.com/GeoLang/panoptes/releases/tag/weights-buildings-v1";
 
 /// Map a catalog model name to its configuration.
 fn catalog_config(model: &str) -> Option<ModelConfig> {
@@ -65,8 +67,9 @@ fn generic_onnx_config(
 /// Resolve `--model` into a config plus an optional local ONNX file to run.
 ///
 /// A catalog name (`buildings`, ...) yields catalog metadata; it only runs ONNX if its
-/// local file exists (catalog models ship no weights yet). Anything else is treated as a
-/// path to a user ONNX segmentation model.
+/// local file exists. `buildings` names a published release asset the user has to
+/// download, the other catalog entries have no weights at all. Anything else is treated
+/// as a path to a user ONNX segmentation model.
 fn resolve_model(
     model: &str,
     tile_size: usize,
@@ -88,8 +91,21 @@ fn resolve_model(
             Ok((config, Some(path)))
         } else {
             Err(format!(
-                "Unknown model '{model}': not a catalog name and not an existing file.\nPanoptes publishes no weights, so you must pass a path to your own .onnx file.\nSee {README_MODEL_SECTION}"
+                "Unknown model '{model}': not a catalog name and not an existing file.\nThe only published weights are for 'buildings', downloaded from\n{BUILDINGS_WEIGHTS_RELEASE}\nFor any other task, pass a path to your own .onnx file.\nSee {README_MODEL_SECTION}"
             ))
+        }
+    }
+}
+
+/// What to do about a selected model that has no ONNX file on disk.
+fn missing_weights_hint(config: &ModelConfig) -> String {
+    match &config.model_path {
+        Some(file) => {
+            format!("Download {file} into the working directory from\n{BUILDINGS_WEIGHTS_RELEASE}")
+        }
+        None => {
+            "No weights are published for it, so pass --model path/to.onnx with a model you supply."
+                .to_string()
         }
     }
 }
@@ -129,8 +145,9 @@ fn run_segmentation(
                 },
                 None => {
                     eprintln!(
-                        "--engine onnx needs an ONNX model file, and no weights exist for '{}'.\nPass --model path/to.onnx with a model you supply.\nSee {README_MODEL_SECTION}",
-                        pipeline.config.name
+                        "--engine onnx needs an ONNX model file, and none was found for '{}'.\n{}\nSee {README_MODEL_SECTION}",
+                        pipeline.config.name,
+                        missing_weights_hint(&pipeline.config)
                     );
                     std::process::exit(1);
                 }
@@ -150,8 +167,9 @@ fn run_segmentation(
 
     if engine == "auto" && onnx_path.is_none() {
         eprintln!(
-            "warning: no weights are published for '{}', so nothing was segmented by a model.\nFalling back to the threshold heuristic, whose output is a smoke test of the tiling and\npolygonization path, not a prediction about this image. Pass --model path/to.onnx to run\na model you supply. See {README_MODEL_SECTION}",
-            pipeline.config.name
+            "warning: no ONNX model file was found for '{}', so nothing was segmented by a model.\nFalling back to the threshold heuristic, whose output is a smoke test of the tiling and\npolygonization path, not a prediction about this image.\n{}\nSee {README_MODEL_SECTION}",
+            pipeline.config.name,
+            missing_weights_hint(&pipeline.config)
         );
     }
 
@@ -281,14 +299,19 @@ pub fn list_models() {
         );
         println!("    Threshold: {}", model.confidence_threshold);
         match &model.model_path {
-            Some(p) => println!("    Status: weights at {p}"),
+            Some(p) if Path::new(p).exists() => println!("    Status: weights at {p}"),
+            Some(p) => println!("    Status: published, expects {p} in the working directory"),
             None => println!("    Status: planned (no weights published)"),
         }
         println!();
     }
-    println!("These entries are metadata only, no weights exist for any of them.");
-    println!("Naming one runs the threshold heuristic, not segmentation.");
-    println!("To run inference, pass an ONNX segmentation model you supply:");
+    println!("Weights are published for buildings only, as a release asset to download into the");
+    println!("working directory:");
+    println!("  {BUILDINGS_WEIGHTS_RELEASE}");
+    println!("  panoptes segment --input img.png --output out.geojson --model buildings");
+    println!();
+    println!("The other entries are metadata only, and naming one runs the threshold heuristic");
+    println!("rather than segmentation. For those tasks, pass an ONNX model you supply:");
     println!("  panoptes segment --input img.png --output out.geojson --model path/to/model.onnx");
     println!("See {README_MODEL_SECTION}");
 }

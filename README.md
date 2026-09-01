@@ -5,27 +5,48 @@
 
 **AI Feature Extraction from Geospatial Imagery**
 
-Panoptes is a Rust library and CLI tool for segmenting satellite and aerial imagery and writing the result out as vectors. Segmentation runs an ONNX model you supply, change detection is pixel differencing. The vectors are bounding boxes of connected components, not feature outlines, see [Limitations](#limitations).
+Panoptes is a Rust library and CLI tool for segmenting satellite and aerial imagery and writing the result out as vectors. Segmentation runs an ONNX model, either the published building weights or one you supply; change detection is pixel differencing. The vectors are traced pixel-edge outlines of connected components, see [Limitations](#limitations).
 
-## Experimental: no trained weights are published
+## Model weights
 
-This repo is experimental. No model weights ship with it, none are published anywhere,
-and nothing in the catalog is trained. Segmentation does not work out of the box.
+Building segmentation is the one task with published weights. The asset
+`panoptes-buildings-v1.onnx` (~80 MB) is attached to the
+[`weights-buildings-v1` release](https://github.com/GeoLang/panoptes/releases/tag/weights-buildings-v1).
+It is a UNet++ with an EfficientNet-B4 encoder, exported to ONNX opset 17 from the
+Hugging Face model
+[`giswqs/whu-building-unetplusplus-efficientnet-b4`](https://huggingface.co/giswqs/whu-building-unetplusplus-efficientnet-b4),
+whose weights are Apache-2.0. Training data is the WHU Building Dataset, which states no
+license and asks to be cited.
 
-To run real inference you must supply your own ONNX segmentation model and pass it with
-`--model path/to/model.onnx`, in a build made with `--features onnx`, on a machine with
-ONNX Runtime >= 1.20 installed. [Model contract](#model-contract) states the exact input
-and output shapes the file has to have.
+Download the asset into the working directory, then:
 
-Without a model file, `panoptes segment` runs a threshold heuristic instead. It is a
-smoke test for the tiling, polygonization and GeoJSON path, not feature extraction, and
-its output is not a prediction about the imagery.
+```bash
+panoptes segment --input img.png --output out.geojson --model buildings
+
+# or point at the file wherever it is
+panoptes segment --input img.png --output out.geojson --model /path/to/panoptes-buildings-v1.onnx
+```
+
+Tile size is 512 and pixels are scaled to `[0, 1]`, so do not pass `--imagenet-normalize`.
+The build needs `--features onnx` and a local ONNX Runtime >= 1.20.
+
+The model's upstream author reports IoU 0.9054 and Dice 0.9503 on the 1,228-tile WHU test
+set. That is their number, not ours. The training imagery is 0.3 m aerial, so on
+lower-resolution imagery (1 m NAIP, say) it still finds large buildings but misses more
+small houses.
+
+Roads, landcover, vegetation and change have no weights, published or planned. Naming one
+runs a threshold heuristic instead: a smoke test for the tiling, polygonization and
+GeoJSON path, not feature extraction, and its output is not a prediction about the
+imagery. To run one of those tasks, supply your own ONNX segmentation model with
+`--model path/to/model.onnx`. [Model contract](#model-contract) states the exact input and
+output shapes the file has to have.
 
 ## Features
 
-- **Semantic Segmentation** — Per-pixel classification, driven by a user-supplied ONNX model
+- **Semantic Segmentation** — Per-pixel classification, driven by the published building weights or an ONNX model you supply
 - **Change Detection** — Temporal comparison by pixel differencing, no model involved
-- **Vector Output** — Automatic polygonization of predictions to GeoJSON, as one bounding box per connected component
+- **Vector Output** — Automatic polygonization of predictions to GeoJSON, as one traced outline per connected component
 - **Sliding Window** — Tiled processing with configurable overlap, so the model input is bounded whatever the image size
 - **Quality Metrics** — IoU, mean IoU, and pixel accuracy against ground truth
 - **GDAL-Free** — Pure Rust image decoding, no system dependencies for the core build
@@ -36,20 +57,23 @@ its output is not a prediction about the imagery.
 panoptes-core       Core types: tensors, model configs, inference traits, metrics
 panoptes-raster     Tile I/O, sliding windows, pyramids, change detection
 panoptes-vector     Polygonization, simplification, GeoJSON export
-panoptes-models     Model catalog (metadata only) and processing pipeline
+panoptes-models     Model catalog and processing pipeline
 panoptes-cli        Command-line interface
 ```
 
 ## Quick Start
 
 ```bash
+# Segment buildings, with panoptes-buildings-v1.onnx downloaded into this directory
+panoptes segment --input image.png --output out.geojson --model buildings
+
 # Run your own ONNX segmentation model (build with --features onnx)
 panoptes segment --input image.png --output out.geojson --model path/to/model.onnx
 
 # Detect changes between two dates
 panoptes change --before 2022.tif --after 2024.tif --output changes.geojson
 
-# List catalog models (metadata only, see below)
+# List catalog models and where their weights come from
 panoptes models
 
 # Evaluate prediction accuracy
@@ -62,8 +86,9 @@ panoptes evaluate --prediction pred.tif --ground-truth gt.tif --num-classes 5
 
 - `--model path/to.onnx` runs the model through ONNX Runtime (build with `--features onnx`).
 - A catalog name (`buildings`, `roads`, ...) runs ONNX only if that model's weights exist
-  locally. None are published, so these always fall back to the threshold heuristic, and
-  say so on stderr.
+  locally. `buildings` needs `panoptes-buildings-v1.onnx` in the working directory; the
+  other names have no weights, so they fall back to the threshold heuristic and say so on
+  stderr.
 - `--engine threshold` forces the heuristic. `--engine onnx` requires a model file and
   exits with an error if there is none.
 
@@ -100,12 +125,15 @@ rest are dropped. Both classes are written to the GeoJSON, background included, 
 
 ## Limitations
 
-- **No trained weights, so there is no accuracy number for anything here.** Nothing in
-  this repo has been evaluated against a benchmark dataset.
-- **Every polygon written is an axis-aligned rectangle.** Polygonization flood-fills
-  connected components and emits each one's 5-point bounding box, so no GeoJSON panoptes
-  writes traces a feature outline. Douglas-Peucker simplification is implemented in
-  `panoptes-vector` and nothing calls it.
+- **The only accuracy number here is the buildings model author's**: IoU 0.9054 on the
+  WHU test set, reported upstream and not reproduced by us. Nothing else in this repo has
+  been evaluated against a benchmark dataset, and the other catalog entries have no
+  weights at all.
+- **Outlines are pixel edges and holes are filled.** Polygonization traces each
+  connected component's outer boundary along pixel edges, so polygons are stair-stepped
+  at pixel resolution and carry no interior rings: a building with a courtyard comes out
+  solid. Douglas-Peucker simplification is implemented in `panoptes-vector` and nothing
+  calls it.
 - There is no multi-resolution or scale-invariant detection. The pyramid builder in
   `panoptes-raster` has no caller: inference runs at one scale and change detection is a
   single-scale pixel difference.
@@ -137,13 +165,14 @@ rest are dropped. Both classes are written to the GeoJSON, background included, 
 
 ## Catalog Models
 
-Planned entries, and there is no work underway on them. These are metadata only (input
-size, classes, thresholds), **no weights exist**. Naming one of them runs the threshold
-heuristic. Use `--model <file.onnx>` to run a segmentation model you supply.
+`panoptes-buildings-v1` has published weights, see [Model weights](#model-weights). The
+rest are planned entries with no work underway: metadata only (input size, classes,
+thresholds), **no weights exist**. Naming one of them runs the threshold heuristic. Use
+`--model <file.onnx>` to run a segmentation model you supply.
 
 | Model | Task | Classes | Status |
 |-------|------|---------|--------|
-| `panoptes-buildings-v1` | Segmentation | background, building | planned |
+| `panoptes-buildings-v1` | Segmentation | background, building | published |
 | `panoptes-roads-v1` | Segmentation | background, road | planned |
 | `panoptes-landcover-v1` | Segmentation | water, vegetation, bare_soil, built_up, agriculture | planned |
 | `panoptes-vegetation-v1` | Segmentation | non_vegetation, trees, shrubs, grass | planned |

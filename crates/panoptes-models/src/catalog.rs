@@ -1,8 +1,9 @@
 //! Model catalog — pre-defined model configurations for common tasks.
 //!
-//! These entries are planned metadata only: their `model_path` is `None` because no
-//! weights are published yet. To run real inference today, pass your own ONNX
-//! segmentation model with the CLI `--model path/to.onnx`.
+//! Only [`building_segmentation`] has published weights: `panoptes-buildings-v1.onnx`,
+//! a release asset that has to be downloaded into the working directory. Every other
+//! entry is metadata only, with a `model_path` of `None`, so to run those tasks pass
+//! your own ONNX segmentation model with the CLI `--model path/to.onnx`.
 
 use panoptes_core::model::{ClassDef, InputSpec, ModelConfig, TaskType};
 
@@ -16,7 +17,7 @@ pub fn building_segmentation() -> ModelConfig {
             width: 512,
             height: 512,
             channels: 3,
-            imagenet_normalize: true,
+            imagenet_normalize: false,
         },
         classes: vec![
             ClassDef {
@@ -31,7 +32,7 @@ pub fn building_segmentation() -> ModelConfig {
             },
         ],
         confidence_threshold: 0.5,
-        model_path: None,
+        model_path: Some("panoptes-buildings-v1.onnx".to_string()),
     }
 }
 
@@ -204,6 +205,11 @@ mod tests {
         assert_eq!(config.classes.len(), 2);
         assert_eq!(config.input.width, 512);
         assert!(matches!(config.task, TaskType::Segmentation));
+        assert_eq!(
+            config.model_path.as_deref(),
+            Some("panoptes-buildings-v1.onnx")
+        );
+        assert!(!config.input.imagenet_normalize);
     }
 
     #[test]

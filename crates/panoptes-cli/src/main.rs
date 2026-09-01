@@ -10,7 +10,7 @@ mod commands;
 #[derive(Parser)]
 #[command(name = "panoptes")]
 #[command(
-    about = "AI feature extraction from geospatial imagery (experimental, no bundled weights)"
+    about = "AI feature extraction from geospatial imagery (experimental, weights are a separate download)"
 )]
 #[command(version)]
 pub struct Cli {
@@ -20,7 +20,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Segment an image with an ONNX model you supply (no weights ship with panoptes).
+    /// Segment an image with the downloaded buildings weights or an ONNX model you supply.
     Segment {
         /// Input image path.
         #[arg(short, long)]
@@ -28,7 +28,7 @@ pub enum Commands {
         /// Output GeoJSON path.
         #[arg(short, long)]
         output: PathBuf,
-        /// Path to a .onnx model, or a catalog name (buildings, roads, vegetation, landcover) which has no weights and falls back to the threshold heuristic.
+        /// Path to a .onnx model, or a catalog name (buildings, roads, vegetation, landcover). Only buildings has weights, and only once panoptes-buildings-v1.onnx is in the working directory; the rest fall back to the threshold heuristic.
         #[arg(short, long, default_value = "buildings")]
         model: String,
         /// Inference engine: auto (onnx if a model file is available, else threshold), onnx, threshold.
