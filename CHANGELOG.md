@@ -17,6 +17,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- a single-channel ONNX output was thresholded as if it were a probability, but the
+  buildings weights emit logits, so `--model buildings` cut at 0.62 probability instead
+  of the requested 0.5. A sigmoid now runs before the threshold, and per-pixel confidence
+  is a probability rather than a raw logit
 - the buildings catalog entry claimed imagenet normalization; the model is trained on
   plain [0, 1] scaling, so predictions through `--model buildings` were fed the wrong
   input range

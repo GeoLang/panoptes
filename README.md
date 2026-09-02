@@ -35,10 +35,13 @@ set. That is their number, not ours. The training imagery is 0.3 m aerial, so on
 lower-resolution imagery (1 m NAIP, say) it still finds large buildings but misses more
 small houses.
 
-Roads, landcover, vegetation and change have no weights, published or planned. Naming one
-runs a threshold heuristic instead: a smoke test for the tiling, polygonization and
-GeoJSON path, not feature extraction, and its output is not a prediction about the
-imagery. To run one of those tasks, supply your own ONNX segmentation model with
+Roads, landcover, vegetation and change have no weights, published or planned. `--model`
+takes four catalog names, `buildings`, `roads`, `vegetation` and `landcover`, so naming
+one of the last three runs a threshold heuristic instead: a smoke test for the tiling,
+polygonization and GeoJSON path, not feature extraction, and its output is not a
+prediction about the imagery. There is no `change` catalog name to pass to `--model`, the
+`panoptes change` command does pixel differencing with no model. To run one of those
+tasks, supply your own ONNX segmentation model with
 `--model path/to/model.onnx`. [Model contract](#model-contract) states the exact input and
 output shapes the file has to have.
 
@@ -47,7 +50,7 @@ output shapes the file has to have.
 - **Semantic Segmentation** — Per-pixel classification, driven by the published building weights or an ONNX model you supply
 - **Change Detection** — Temporal comparison by pixel differencing, no model involved
 - **Vector Output** — Automatic polygonization of predictions to GeoJSON, as one traced outline per connected component
-- **Sliding Window** — Tiled processing with configurable overlap, so the model input is bounded whatever the image size
+- **Sliding Window** — Tiled processing, so the model input is bounded whatever the image size. The CLI overlaps tiles by a quarter of `--tile-size` and has no overlap flag
 - **Quality Metrics** — IoU, mean IoU, and pixel accuracy against ground truth
 - **GDAL-Free** — Pure Rust image decoding, no system dependencies for the core build
 
@@ -111,8 +114,10 @@ matter.
 
 Output, first output of the graph, one of:
 
-- `[1, 1, H, W]` or `[1, H, W]`, read as a foreground probability map. A pixel is
-  foreground when its value is at or above `--confidence` (default 0.5).
+- `[1, 1, H, W]` or `[1, H, W]`, read as foreground logits. A sigmoid turns each value
+  into a probability, and a pixel is foreground when that probability is at or above
+  `--confidence` (default 0.5). Do not put a sigmoid in the graph, it would be applied
+  twice.
 - `[1, K, H, W]`, read as per-class logits. Softmax over the channel axis, then argmax
   picks the class.
 
@@ -167,8 +172,10 @@ rest are dropped. Both classes are written to the GeoJSON, background included, 
 
 `panoptes-buildings-v1` has published weights, see [Model weights](#model-weights). The
 rest are planned entries with no work underway: metadata only (input size, classes,
-thresholds), **no weights exist**. Naming one of them runs the threshold heuristic. Use
-`--model <file.onnx>` to run a segmentation model you supply.
+thresholds), **no weights exist**. `--model roads`, `--model vegetation` and
+`--model landcover` run the threshold heuristic. `panoptes-change-v1` only shows up in
+`panoptes models` and is not a `--model` value. Use `--model <file.onnx>` to run a
+segmentation model you supply.
 
 | Model | Task | Classes | Status |
 |-------|------|---------|--------|
@@ -185,10 +192,13 @@ cargo build --release              # core build, no ONNX
 cargo build --release --features onnx -p panoptes-cli   # with ONNX inference
 ```
 
+The release workflow builds without the feature, so the binaries attached to a release
+cannot run ONNX. Build from source with `--features onnx` to run a model.
+
 ## Testing
 
 ```bash
-cargo test                                     # 44 tests, no ONNX
+cargo test                                     # 46 tests, no ONNX
 cargo test -p panoptes-models --features onnx  # end-to-end ONNX pipeline test
 ```
 

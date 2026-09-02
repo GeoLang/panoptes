@@ -15,7 +15,8 @@ use thiserror::Error;
 use crate::inference::{Detection, InferenceEngine, InferenceResult};
 use crate::model::{ModelConfig, TaskType};
 use crate::tensor::{
-    ImageTensor, ProbabilityMap, argmax_mask, confidence_map, imagenet_normalize, softmax_chw,
+    ImageTensor, ProbabilityMap, argmax_mask, confidence_map, imagenet_normalize, sigmoid,
+    softmax_chw,
 };
 
 /// Errors from ONNX inference.
@@ -142,8 +143,8 @@ impl OnnxEngine {
 
     /// Parse a segmentation output into a class mask + probability map.
     ///
-    /// Accepts either a single-channel foreground-probability map `[N,1,H,W]` (or
-    /// `[N,H,W]`) or multi-class logits `[N,K,H,W]`.
+    /// Accepts either a single-channel foreground logit map `[N,1,H,W]` (or `[N,H,W]`),
+    /// which goes through a sigmoid, or multi-class logits `[N,K,H,W]`.
     fn parse_segmentation(
         &self,
         out_shape: &[i64],
@@ -158,20 +159,12 @@ impl OnnxEngine {
         };
 
         if channels <= 1 {
-            // single-channel foreground probability map
-            let threshold = self.config.confidence_threshold;
-            let mut mask = ndarray::Array2::zeros((out_h, out_w));
-            let mut confidence: ProbabilityMap = ndarray::Array2::zeros((out_h, out_w));
-            for y in 0..out_h {
-                for x in 0..out_w {
-                    let p = out_data[y * out_w + x];
-                    let foreground = p >= threshold;
-                    mask[[y, x]] = foreground as u8;
-                    // confidence of the predicted class
-                    confidence[[y, x]] = if foreground { p } else { 1.0 - p };
-                }
-            }
-            return Ok(InferenceResult::Segmentation { mask, confidence });
+            return Ok(threshold_foreground_logits(
+                out_data,
+                out_h,
+                out_w,
+                self.config.confidence_threshold,
+            ));
         }
 
         // multi-class logits: softmax over the channel axis, then argmax
@@ -237,6 +230,30 @@ impl OnnxEngine {
     }
 }
 
+/// Turn a single-channel logit map into a foreground mask plus per-pixel confidence.
+///
+/// The published buildings weights are exported without an activation, so the channel
+/// carries logits and the sigmoid belongs here.
+fn threshold_foreground_logits(
+    out_data: &[f32],
+    out_h: usize,
+    out_w: usize,
+    threshold: f32,
+) -> InferenceResult {
+    let mut mask = ndarray::Array2::zeros((out_h, out_w));
+    let mut confidence: ProbabilityMap = ndarray::Array2::zeros((out_h, out_w));
+    for y in 0..out_h {
+        for x in 0..out_w {
+            let p = sigmoid(out_data[y * out_w + x]);
+            let foreground = p >= threshold;
+            mask[[y, x]] = foreground as u8;
+            // confidence of the predicted class
+            confidence[[y, x]] = if foreground { p } else { 1.0 - p };
+        }
+    }
+    InferenceResult::Segmentation { mask, confidence }
+}
+
 impl InferenceEngine for OnnxEngine {
     fn predict(&self, input: &ImageTensor, _config: &ModelConfig) -> InferenceResult {
         match self.infer(input) {
@@ -250,5 +267,26 @@ impl InferenceEngine for OnnxEngine {
 
     fn name(&self) -> &str {
         "onnx-runtime"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_channel_output_is_thresholded_as_logits() {
+        // logit 0.3 is probability 0.574, foreground at a 0.5 threshold
+        let result = threshold_foreground_logits(&[0.3, -0.3, 4.0, -4.0], 2, 2, 0.5);
+        let InferenceResult::Segmentation { mask, confidence } = result else {
+            panic!("expected a segmentation result");
+        };
+        assert_eq!(mask[[0, 0]], 1);
+        assert_eq!(mask[[0, 1]], 0);
+        assert_eq!(mask[[1, 0]], 1);
+        assert_eq!(mask[[1, 1]], 0);
+        assert!((confidence[[0, 0]] - 0.574).abs() < 1e-3);
+        assert!((confidence[[0, 1]] - 0.574).abs() < 1e-3);
+        assert!(confidence.iter().all(|&c| (0.5..=1.0).contains(&c)));
     }
 }

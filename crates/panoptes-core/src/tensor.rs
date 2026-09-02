@@ -58,6 +58,11 @@ pub fn stack_batch(images: &[ImageTensor]) -> BatchTensor {
     batch
 }
 
+/// Turn a single logit into a probability.
+pub fn sigmoid(logit: f32) -> f32 {
+    1.0 / (1.0 + (-logit).exp())
+}
+
 /// Apply softmax along axis 0 (channel axis) of a CHW tensor to get per-pixel class probabilities.
 pub fn softmax_chw(tensor: &ImageTensor) -> ImageTensor {
     let shape = tensor.shape();
@@ -169,6 +174,14 @@ mod tests {
         let hwc = chw_to_hwc(&chw);
         let back = hwc_to_chw(&hwc);
         assert_eq!(chw, back);
+    }
+
+    #[test]
+    fn test_sigmoid() {
+        assert!((sigmoid(0.0) - 0.5).abs() < 1e-6);
+        assert!((sigmoid(0.3) - 0.574_442_5).abs() < 1e-6);
+        assert!(sigmoid(-20.0) < 1e-6);
+        assert!(sigmoid(20.0) > 1.0 - 1e-6);
     }
 
     #[test]
