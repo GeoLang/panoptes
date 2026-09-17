@@ -83,7 +83,7 @@ fn leak_ort_environment() {
     use std::sync::Once;
     static LEAK: Once = Once::new();
     LEAK.call_once(|| {
-        if let Ok(env) = ort::environment::current() {
+        if let Ok(env) = ort::environment::Environment::current() {
             std::mem::forget(env);
         }
     });
