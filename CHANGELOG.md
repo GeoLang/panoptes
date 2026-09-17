@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-09-16
+
+### Fixed
+
+- the landing page said 45 tests, the workspace declares 48
+
 ## [Unreleased] - 2026-09-01
 
 ### Added
