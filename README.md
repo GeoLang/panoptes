@@ -3,22 +3,25 @@
 [![CI](https://github.com/GeoLang/panoptes/actions/workflows/ci.yml/badge.svg)](https://github.com/GeoLang/panoptes/actions)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-**AI Feature Extraction from Geospatial Imagery**
+**Rust library and CLI that segments aerial and satellite imagery and writes the result as GeoJSON polygons.**
 
-Panoptes is a Rust library and CLI tool for segmenting satellite and aerial imagery and writing the result out as vectors. Segmentation runs an ONNX model, either the published building weights or one you supply; change detection is pixel differencing. The vectors are traced pixel-edge outlines of connected components, see [Limitations](#limitations).
+Segmentation runs an ONNX model, either the published building weights or one you supply. Change detection is pixel differencing. The polygons are traced pixel-edge outlines of connected components in pixel coordinates, see [Limitations](#limitations).
 
 ## Model weights
 
 Building segmentation is the one task with published weights. The asset
-`panoptes-buildings-v1.onnx` (~80 MB) is attached to the
+`panoptes-buildings-v1.onnx` (80 MB) is attached to the
 [`weights-buildings-v1` release](https://github.com/GeoLang/panoptes/releases/tag/weights-buildings-v1).
 It is a UNet++ with an EfficientNet-B4 encoder, exported to ONNX opset 17 from the
 Hugging Face model
 [`giswqs/whu-building-unetplusplus-efficientnet-b4`](https://huggingface.co/giswqs/whu-building-unetplusplus-efficientnet-b4),
 whose weights are Apache-2.0. Training data is the WHU Building Dataset, which states no
-license and asks to be cited.
+license and asks to be cited. `scripts/export_buildings_onnx.py <model checkout> <output.onnx>`
+rebuilds the file from a checkout of that model, and needs `torch` and
+`segmentation_models_pytorch`.
 
-Download the asset into the working directory, then:
+`--model buildings` looks for `panoptes-buildings-v1.onnx` in the current working
+directory, not next to the binary. Download the asset there, then:
 
 ```bash
 panoptes segment --input img.png --output out.geojson --model buildings
@@ -27,8 +30,12 @@ panoptes segment --input img.png --output out.geojson --model buildings
 panoptes segment --input img.png --output out.geojson --model /path/to/panoptes-buildings-v1.onnx
 ```
 
-Tile size is 512 and pixels are scaled to `[0, 1]`, so do not pass `--imagenet-normalize`.
-The build needs `--features onnx` and a local ONNX Runtime >= 1.20.
+The file was exported with a fixed 512 x 512 input, so keep `--tile-size` at its default
+of 512. `--model buildings` scales pixels to `[0, 1]` with a 0.5 threshold and ignores
+`--confidence` and `--imagenet-normalize`. The path form reads those flags, so leave
+`--imagenet-normalize` off. Either way the build needs `--features onnx` and a local ONNX Runtime >= 1.20. Without a
+model file, `--model buildings` falls back to the threshold heuristic and prints a
+warning.
 
 The model's upstream author reports IoU 0.9054 and Dice 0.9503 on the 1,228-tile WHU test
 set. That is their number, not ours. The training imagery is 0.3 m aerial, so on
@@ -47,12 +54,12 @@ output shapes the file has to have.
 
 ## Features
 
-- **Semantic Segmentation** — Per-pixel classification, driven by the published building weights or an ONNX model you supply
-- **Change Detection** — Temporal comparison by pixel differencing, no model involved
-- **Vector Output** — Automatic polygonization of predictions to GeoJSON, as one traced outline per connected component
-- **Sliding Window** — Tiled processing, so the model input is bounded whatever the image size. The CLI overlaps tiles by a quarter of `--tile-size` and has no overlap flag
-- **Quality Metrics** — IoU, mean IoU, and pixel accuracy against ground truth
-- **GDAL-Free** — Pure Rust image decoding, no system dependencies for the core build
+- **Semantic segmentation**: per-pixel classification, driven by the published building weights or an ONNX model you supply
+- **Change detection**: pixel differencing between two images, no model involved
+- **Vector output**: one traced outline per connected component, written as GeoJSON with `class_id`, `area_px` and `confidence` properties
+- **Sliding window**: tiled processing, so the model input is bounded whatever the image size. The CLI overlaps tiles by a quarter of `--tile-size` and has no overlap flag
+- **Quality metrics**: IoU, mean IoU and pixel accuracy against a ground-truth mask
+- **No GDAL**: images decode through the Rust `image` crate. Only the `onnx` feature needs a system library, ONNX Runtime
 
 ## Architecture
 
@@ -89,9 +96,10 @@ panoptes evaluate --prediction pred.tif --ground-truth gt.tif --num-classes 5
 
 - `--model path/to.onnx` runs the model through ONNX Runtime (build with `--features onnx`).
 - A catalog name (`buildings`, `roads`, ...) runs ONNX only if that model's weights exist
-  locally. `buildings` needs `panoptes-buildings-v1.onnx` in the working directory; the
+  locally. `buildings` needs `panoptes-buildings-v1.onnx` in the working directory. The
   other names have no weights, so they fall back to the threshold heuristic and say so on
   stderr.
+- `--model` defaults to `buildings`, and `--engine` defaults to `auto`.
 - `--engine threshold` forces the heuristic. `--engine onnx` requires a model file and
   exits with an error if there is none.
 
@@ -136,43 +144,46 @@ rest are dropped. Both classes are written to the GeoJSON, background included, 
   weights at all.
 - **Outlines are pixel edges and holes are filled.** Polygonization traces each
   connected component's outer boundary along pixel edges, so polygons are stair-stepped
-  at pixel resolution and carry no interior rings: a building with a courtyard comes out
+  at pixel resolution and carry no interior rings. A building with a courtyard comes out
   solid. Douglas-Peucker simplification is implemented in `panoptes-vector` and nothing
   calls it.
 - There is no multi-resolution or scale-invariant detection. The pyramid builder in
   `panoptes-raster` has no caller: inference runs at one scale and change detection is a
   single-scale pixel difference.
 - Tiling bounds the model input, not memory. Loading decodes the whole file into a
-  full-image f32 array before any tiling, so a 50k x 50k image needs roughly 30 GB.
+  full-image f32 array before any tiling, so a 50k x 50k RGB image needs 30 GB.
 - Tile-parallel inference across rayon, with overlap blending on merge, exists in the
   library and has no caller outside its own test. The CLI path is a sequential map that
-  polygonizes each tile on its own.
+  polygonizes each tile on its own, so a feature inside the overlap between two tiles is
+  written once per tile.
+- Every class is polygonized, background (class 0) included.
 - Tiles are whole tiles only. An image smaller than `--tile-size` in either dimension
   yields no tiles at all, and edge remainders are dropped rather than padded.
 - **Output coordinates are pixel space, not world coordinates.** Nothing reads a
   geotransform, so the GeoJSON carries no CRS and its coordinates are image row/column
-  values. Reprojecting to real-world coordinates is on you for now.
+  values. Reprojecting to real-world coordinates is left to the caller.
 - COG reading does not decode pixels and nothing reaches it. The module parses the IFD
-  chain and tile offsets, and a tile read hands back the raw bytes: the compression field
+  chain and tile offsets, and a tile read returns the raw bytes. The compression field
   is recorded and never acted on, so there is no decompression and no pixel decode. It is
   local-file only too, with no HTTP or S3 client. Image loading goes through the `image`
   crate instead, so the CLI never enters this path.
 - Satellite preprocessing (DN to TOA, DOS1, pan-sharpening, the spectral indices, band
-  compositing) is unreachable. `SatelliteImage` is constructed nowhere in the workspace,
+  compositing) is library code the CLI cannot reach. `SatelliteImage` is constructed nowhere in the workspace,
   including tests, and the only file reader calls `to_rgb8()`, so every image becomes
   3-channel 8-bit RGB and no NIR or SWIR band can enter. The `Sensor` enum is a bare tag
   with no calibration coefficients, whatever `satellite.rs`'s rustdoc says about
   Sentinel-2 and Landsat 8/9.
-- Object detection exists as a library result type, produced only by the threshold
-  heuristic. There is no detection CLI command and no non-maximum suppression.
+- Object detection exists as a library result type. The threshold and ONNX engines
+  produce it for a `TaskType::Detection` config, but no catalog entry or CLI command uses
+  that task, and there is no non-maximum suppression.
 - `panoptes-raster::explain` provides occlusion sensitivity and a saliency map derived
   from confidence. Grad-CAM is declared in the enum but not implemented.
 
 ## Catalog Models
 
 `panoptes-buildings-v1` has published weights, see [Model weights](#model-weights). The
-rest are planned entries with no work underway: metadata only (input size, classes,
-thresholds), **no weights exist**. `--model roads`, `--model vegetation` and
+rest are metadata only (input size, classes, thresholds), and no weights exist or are being
+trained. `--model roads`, `--model vegetation` and
 `--model landcover` run the threshold heuristic. `panoptes-change-v1` only shows up in
 `panoptes models` and is not a `--model` value. Use `--model <file.onnx>` to run a
 segmentation model you supply.
@@ -198,7 +209,7 @@ cannot run ONNX. Build from source with `--features onnx` to run a model.
 ## Testing
 
 ```bash
-cargo test                                     # 46 tests, no ONNX
+cargo test --all                               # no ONNX
 cargo test -p panoptes-models --features onnx  # end-to-end ONNX pipeline test
 ```
 
