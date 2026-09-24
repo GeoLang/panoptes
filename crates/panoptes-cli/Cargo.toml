@@ -18,6 +18,6 @@ panoptes-raster = { path = "../panoptes-raster" }
 panoptes-vector = { path = "../panoptes-vector" }
 panoptes-models = { path = "../panoptes-models" }
 clap = { version = "4", features = ["derive"] }
-ndarray = "0.16"
+ndarray = "0.17"
 serde_json = "1"
 rayon = "1"
