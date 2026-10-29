@@ -12,7 +12,7 @@ onnx = ["panoptes-core/onnx"]
 panoptes-core = { path = "../panoptes-core" }
 panoptes-raster = { path = "../panoptes-raster" }
 panoptes-vector = { path = "../panoptes-vector" }
-ndarray = "0.16"
+ndarray = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
