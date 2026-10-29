@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-10-29
+
+### Added
+
+- `panoptes segment --layer-file <toml> --layer <name>` reads its image from a geoplumb
+  layer, any source and op chain a geoplumb-server layer file names, pulled over `--bbox`
+  at `--resolution` on the `--crs` grid (EPSG:3857 by default), with an optional `--time`
+  interval. `--resolution` has no default. The layer has to produce the model's band
+  count, nodata cells become 0 and the command prints how many there were
+- polygons from a layer come out in EPSG:4326 longitude and latitude, georeferenced from
+  the grid of the pulled window. `area_px` stays in pixels, and `--input` output stays in
+  pixel coordinates
+- `panoptes_vector::georeference`, `pixel_to_map` from pixel outlines to grid coordinates
+  and `map_coordinates` for any other per-vertex transform
+
 ## [Unreleased] - 2026-09-16
 
 ### Fixed

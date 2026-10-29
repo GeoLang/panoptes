@@ -5,7 +5,7 @@
 
 **Rust library and CLI that segments aerial and satellite imagery and writes the result as GeoJSON polygons.**
 
-Segmentation runs an ONNX model, either the published building weights or one you supply. Change detection is pixel differencing. The polygons are traced pixel-edge outlines of connected components in pixel coordinates, see [Limitations](#limitations).
+Segmentation runs an ONNX model, either the published building weights or one you supply. Change detection is pixel differencing. The polygons are traced pixel-edge outlines of connected components, in pixel coordinates for an image file and in EPSG:4326 longitude/latitude for a [geoplumb layer](#from-a-geoplumb-layer), see [Limitations](#limitations).
 
 ## Model weights
 
@@ -66,7 +66,7 @@ output shapes the file has to have.
 ```
 panoptes-core       Core types: tensors, model configs, inference traits, metrics
 panoptes-raster     Tile I/O, sliding windows, pyramids, change detection
-panoptes-vector     Polygonization, simplification, GeoJSON export
+panoptes-vector     Polygonization, simplification, pixel to map coordinates, GeoJSON export
 panoptes-models     Model catalog and processing pipeline
 panoptes-cli        Command-line interface
 ```
@@ -89,6 +89,38 @@ panoptes models
 # Evaluate prediction accuracy
 panoptes evaluate --prediction pred.tif --ground-truth gt.tif --num-classes 5
 ```
+
+## From a geoplumb layer
+
+`--layer-file` reads the image from a [geoplumb](https://github.com/GeoLang/geoplumb)
+layer instead of a file: any source and op chain a geoplumb-server layer file can name,
+pulled over `--bbox` at `--resolution` on the `--crs` grid, EPSG:3857 unless you pass
+another code. A layer file with one local COG:
+
+```toml
+[[layer]]
+name = "aerial"
+source = { kind = "cog", path = "/data/aerial.tif" }
+```
+
+```bash
+panoptes segment --layer-file layers.toml --layer aerial \
+  --bbox 1000000,6000000,1001536,6001536 --resolution 0.3 \
+  --output out.geojson --model buildings
+```
+
+`--bbox` and `--resolution` are in `--crs` units, and `--resolution` has no default: the
+buildings model was trained on 0.3 m imagery and does worse away from it. The layer has
+to produce as many bands as the model takes, three for buildings, valued 0 to 255, so a
+layer in another range scales itself with a `bandmath` op. Nodata cells become 0 and the
+command prints how many there were. `--time start/end` picks the interval of a
+time-varying source such as `stac`. A `gdal` source needs a geoplumb-server built with
+its `gdal` feature, which panoptes does not enable, so a layer file naming one fails to
+parse. A relative `path` in the layer file resolves against the working directory.
+
+The output polygons are in EPSG:4326 longitude/latitude, georeferenced from the grid of
+the window the layer returned. `area_px` stays in pixels. The `--input` path still writes
+pixel coordinates.
 
 ## Inference
 
@@ -159,9 +191,10 @@ rest are dropped. Both classes are written to the GeoJSON, background included, 
 - Every class is polygonized, background (class 0) included.
 - Tiles are whole tiles only. An image smaller than `--tile-size` in either dimension
   yields no tiles at all, and edge remainders are dropped rather than padded.
-- **Output coordinates are pixel space, not world coordinates.** Nothing reads a
-  geotransform, so the GeoJSON carries no CRS and its coordinates are image row/column
-  values. Reprojecting to real-world coordinates is left to the caller.
+- **`--input` output coordinates are pixel space, not world coordinates.** Nothing reads
+  an image file's geotransform, so the GeoJSON carries no CRS and its coordinates are
+  image row/column values. Reprojecting them is left to the caller. A
+  [geoplumb layer](#from-a-geoplumb-layer) writes EPSG:4326 instead.
 - COG reading does not decode pixels and nothing reaches it. The module parses the IFD
   chain and tile offsets, and a tile read returns the raw bytes. The compression field
   is recorded and never acted on, so there is no decompression and no pixel decode. It is

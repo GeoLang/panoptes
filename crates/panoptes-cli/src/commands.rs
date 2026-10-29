@@ -2,6 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
+use geoplumb::elements::Reproject;
+use geoplumb::{Bbox, Crs, Engine, WindowReq};
+use geoplumb_server::config::Config;
+use geoplumb_server::{LayerGraph, build_layer_graph, parse_time};
 use panoptes_core::confidence;
 use panoptes_core::inference::ThresholdEngine;
 use panoptes_core::model::{ClassDef, InputSpec, ModelConfig, TaskType};
@@ -12,7 +16,8 @@ use panoptes_raster::change::detect_change;
 use panoptes_raster::tile::load_image;
 use panoptes_raster::window::WindowConfig;
 use panoptes_vector::geojson_io::to_geojson_string;
-use panoptes_vector::polygonize::polygonize_class;
+use panoptes_vector::georeference::{MapGrid, map_coordinates, pixel_to_map};
+use panoptes_vector::polygonize::{VectorFeature, polygonize_class};
 
 const README_MODEL_SECTION: &str = "https://github.com/GeoLang/panoptes#model-weights";
 
@@ -178,9 +183,104 @@ fn run_segmentation(
     pipeline.process(image, &eng)
 }
 
+pub enum ImageSource {
+    File(PathBuf),
+    Layer(LayerRequest),
+}
+
+pub struct LayerRequest {
+    pub layer_file: PathBuf,
+    pub layer: String,
+    pub bbox: Bbox,
+    pub crs: u32,
+    pub resolution: f64,
+    pub time: Option<String>,
+}
+
+struct GeoreferencedImage {
+    tensor: ImageTensor,
+    grid: MapGrid,
+    nodata_cells: usize,
+}
+
+const LAYER_CACHE_BYTES: usize = 512 << 20;
+
+fn pull_layer_image(request: &LayerRequest, channels: usize) -> Result<GeoreferencedImage, String> {
+    let time = parse_time(request.time.as_deref())?;
+    let path = &request.layer_file;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let config = Config::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let Some(layer) = config.layers.iter().find(|l| l.name == request.layer) else {
+        let names: Vec<&str> = config.layers.iter().map(|l| l.name.as_str()).collect();
+        return Err(format!(
+            "{} has no layer named {}, it has: {}",
+            path.display(),
+            request.layer,
+            names.join(", ")
+        ));
+    };
+    let LayerGraph {
+        mut graph, node, ..
+    } = build_layer_graph(layer)?;
+    let node = graph.add_transform(node, Box::new(Reproject::new(Crs(request.crs))));
+    let engine = Engine::new(graph, LAYER_CACHE_BYTES).map_err(|e| e.to_string())?;
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let window = WindowReq {
+        bbox: request.bbox,
+        resolution: request.resolution,
+        time,
+    };
+    let raster = runtime
+        .block_on(engine.pull(node, window))
+        .and_then(|chunk| chunk.into_raster())
+        .map_err(|e| e.to_string())?;
+
+    let band_count = raster.bands.band_count();
+    if band_count != channels {
+        return Err(format!(
+            "the layer has {band_count} bands and the model takes {channels}"
+        ));
+    }
+    let (height, width) = (raster.height(), raster.width());
+    let mut tensor = ImageTensor::zeros((channels, height, width));
+    let mut nodata = vec![false; height * width];
+    for (channel, band) in raster.bands.bands().iter().enumerate() {
+        for (index, &value) in band.data().iter().enumerate() {
+            if band.is_nodata(value) {
+                nodata[index] = true;
+                continue;
+            }
+            tensor[[channel, index / width, index % width]] = value as f32;
+        }
+    }
+    let nodata_cells = nodata.iter().filter(|&&cell| cell).count();
+    Ok(GeoreferencedImage {
+        tensor,
+        grid: MapGrid {
+            min_x: raster.bbox.min_x,
+            max_y: raster.bbox.max_y,
+            resolution: raster.resolution,
+            epsg: raster.crs.0,
+        },
+        nodata_cells,
+    })
+}
+
+fn georeference(features: &[VectorFeature], grid: &MapGrid) -> Result<Vec<VectorFeature>, String> {
+    let mapped = pixel_to_map(features, grid);
+    if grid.epsg == Crs::WGS84.0 {
+        return Ok(mapped);
+    }
+    let source = Crs(grid.epsg).authority();
+    let transform = projicio_core::Transform::new(&source, &Crs::WGS84.authority())
+        .map_err(|e| format!("{source} to EPSG:4326: {e}"))?;
+    map_coordinates(&mapped, |x, y| transform.convert(x, y))
+        .map_err(|e| format!("{source} to EPSG:4326: {e}"))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn segment(
-    input: &Path,
+    source: &ImageSource,
     output: &Path,
     model: &str,
     engine: &str,
@@ -198,12 +298,29 @@ pub fn segment(
             }
         };
 
-    let image = match load_image(input) {
-        Ok(img) => img,
-        Err(e) => {
-            eprintln!("Failed to load image: {}", e);
-            std::process::exit(1);
-        }
+    let (image, grid) = match source {
+        ImageSource::File(input) => match load_image(input) {
+            Ok(img) => (img, None),
+            Err(e) => {
+                eprintln!("Failed to load image: {}", e);
+                std::process::exit(1);
+            }
+        },
+        ImageSource::Layer(request) => match pull_layer_image(request, config.input.channels) {
+            Ok(pulled) => {
+                if pulled.nodata_cells > 0 {
+                    println!(
+                        "{} nodata cells in the pulled window were set to 0",
+                        pulled.nodata_cells
+                    );
+                }
+                (pulled.tensor, Some(pulled.grid))
+            }
+            Err(e) => {
+                eprintln!("Failed to pull layer {}: {e}", request.layer);
+                std::process::exit(1);
+            }
+        },
     };
 
     println!("Loaded image: {:?}", image.shape());
@@ -224,7 +341,18 @@ pub fn segment(
         );
     }
 
-    let geojson = to_geojson_string(&result.features);
+    let features = match &grid {
+        None => result.features,
+        Some(grid) => match georeference(&result.features, grid) {
+            Ok(features) => features,
+            Err(e) => {
+                eprintln!("Failed to georeference features: {e}");
+                std::process::exit(1);
+            }
+        },
+    };
+
+    let geojson = to_geojson_string(&features);
     if let Err(e) = std::fs::write(output, &geojson) {
         eprintln!("Failed to write output: {}", e);
         std::process::exit(1);
