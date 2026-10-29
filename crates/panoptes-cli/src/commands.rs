@@ -2,8 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use geoplumb::elements::Reproject;
-use geoplumb::{Bbox, Crs, Engine, WindowReq};
+use geoplumb::caps::{CapsPattern, CapsSet, Constraint, RasterPattern, SetField};
+use geoplumb::{Bbox, Chunk, Crs, Engine, Transform, WindowReq};
 use geoplumb_server::config::Config;
 use geoplumb_server::{LayerGraph, build_layer_graph, parse_time};
 use panoptes_core::confidence;
@@ -205,6 +205,30 @@ struct GeoreferencedImage {
 
 const LAYER_CACHE_BYTES: usize = 512 << 20;
 
+// an explicit reproject resamples a layer that is already in the crs
+struct CrsDemand(Crs);
+
+impl Transform for CrsDemand {
+    fn identity(&self) -> String {
+        format!("CrsDemand crs={}", self.0)
+    }
+
+    fn constraint(&self) -> Constraint {
+        Constraint::Identity(CapsSet::one(CapsPattern::Raster(RasterPattern {
+            crs: SetField::one(self.0),
+            ..RasterPattern::default()
+        })))
+    }
+
+    fn plan(&self, out: &WindowReq) -> WindowReq {
+        *out
+    }
+
+    fn compute(&self, out: &WindowReq, input: &Chunk) -> geoplumb::Result<Chunk> {
+        Ok(Chunk::Raster(input.raster()?.crop_to(&out.bbox)))
+    }
+}
+
 fn pull_layer_image(request: &LayerRequest, channels: usize) -> Result<GeoreferencedImage, String> {
     let time = parse_time(request.time.as_deref())?;
     let path = &request.layer_file;
@@ -222,7 +246,7 @@ fn pull_layer_image(request: &LayerRequest, channels: usize) -> Result<Georefere
     let LayerGraph {
         mut graph, node, ..
     } = build_layer_graph(layer)?;
-    let node = graph.add_transform(node, Box::new(Reproject::new(Crs(request.crs))));
+    let node = graph.add_transform(node, Box::new(CrsDemand(Crs(request.crs))));
     let engine = Engine::new(graph, LAYER_CACHE_BYTES).map_err(|e| e.to_string())?;
     let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     let window = WindowReq {

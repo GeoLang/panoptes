@@ -16,6 +16,17 @@ All notable changes to this project will be documented in this file.
   pixel coordinates
 - `panoptes_vector::georeference`, `pixel_to_map` from pixel outlines to grid coordinates
   and `map_coordinates` for any other per-vertex transform
+- a `gdal` feature on the CLI, so a layer file can name a `gdal` source. It needs a system
+  GDAL, and the default build still has none
+
+### Fixed
+
+- a layer already in `--crs` is read on its own pixel grid. It went through a reproject
+  that resampled it onto the web mercator corner grid, which moved a source off that grid
+  by up to half a pixel before the model saw it
+- a feature across the overlap between tiles comes out as one polygon. Each tile was
+  polygonized on its own, so the same feature was written once per tile it touched. Tile
+  masks are now stitched, each pixel from the tile whose center is nearest, and traced once
 
 ## [Unreleased] - 2026-09-16
 

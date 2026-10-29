@@ -39,7 +39,7 @@ pub enum Commands {
             requires = "layer",
             requires = "bbox",
             requires = "resolution",
-            help = "geoplumb-server layer file to read the image from, in place of --input"
+            help = "geoplumb-server layer file to read the image from, in place of --input. A gdal source needs a build with --features gdal"
         )]
         layer_file: Option<PathBuf>,
         #[arg(

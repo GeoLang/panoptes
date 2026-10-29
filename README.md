@@ -59,7 +59,7 @@ output shapes the file has to have.
 - **Vector output**: one traced outline per connected component, written as GeoJSON with `class_id`, `area_px` and `confidence` properties
 - **Sliding window**: tiled processing, so the model input is bounded whatever the image size. The CLI overlaps tiles by a quarter of `--tile-size` and has no overlap flag
 - **Quality metrics**: IoU, mean IoU and pixel accuracy against a ground-truth mask
-- **No GDAL**: images decode through the Rust `image` crate. Only the `onnx` feature needs a system library, ONNX Runtime
+- **No GDAL**: images decode through the Rust `image` crate. Only the `onnx` and `gdal` features need a system library, ONNX Runtime and GDAL
 
 ## Architecture
 
@@ -114,9 +114,13 @@ buildings model was trained on 0.3 m imagery and does worse away from it. The la
 to produce as many bands as the model takes, three for buildings, valued 0 to 255, so a
 layer in another range scales itself with a `bandmath` op. Nodata cells become 0 and the
 command prints how many there were. `--time start/end` picks the interval of a
-time-varying source such as `stac`. A `gdal` source needs a geoplumb-server built with
-its `gdal` feature, which panoptes does not enable, so a layer file naming one fails to
-parse. A relative `path` in the layer file resolves against the working directory.
+time-varying source such as `stac`. A `gdal` source needs panoptes built with
+`--features gdal` and a system GDAL, otherwise the layer file fails to parse. A relative
+`path` in the layer file resolves against the working directory.
+
+A layer already in `--crs` is read on its own pixel grid. A layer in another CRS is
+reprojected with bilinear sampling onto a grid anchored at the web mercator corner for
+3857, at -180, 90 for 4326, and at the layer's projected origin for any other CRS.
 
 The output polygons are in EPSG:4326 longitude/latitude, georeferenced from the grid of
 the window the layer returned. `area_px` stays in pixels. The `--input` path still writes
@@ -185,9 +189,9 @@ rest are dropped. Both classes are written to the GeoJSON, background included, 
 - Tiling bounds the model input, not memory. Loading decodes the whole file into a
   full-image f32 array before any tiling, so a 50k x 50k RGB image needs 30 GB.
 - Tile-parallel inference across rayon, with overlap blending on merge, exists in the
-  library and has no caller outside its own test. The CLI path is a sequential map that
-  polygonizes each tile on its own, so a feature inside the overlap between two tiles is
-  written once per tile.
+  library and has no caller outside its own test. The CLI path runs tiles one after
+  another, takes each pixel's class from the tile whose center is nearest, and polygonizes
+  the stitched mask once, so a feature across tiles is one polygon.
 - Every class is polygonized, background (class 0) included.
 - Tiles are whole tiles only. An image smaller than `--tile-size` in either dimension
   yields no tiles at all, and edge remainders are dropped rather than padded.

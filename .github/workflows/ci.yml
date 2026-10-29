@@ -54,6 +54,21 @@ jobs:
       - name: Test
         run: cargo test --all --features onnx
 
+  gdal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install GDAL
+        run: sudo apt-get update && sudo apt-get install -y libgdal-dev
+      - name: Clippy
+        run: cargo clippy --all-targets --features gdal -- -D warnings
+      - name: Test
+        run: cargo test --all --features gdal
+
   deny:
     runs-on: ubuntu-latest
     steps:

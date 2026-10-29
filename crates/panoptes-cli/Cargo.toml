@@ -11,6 +11,7 @@ path = "src/main.rs"
 [features]
 default = []
 onnx = ["panoptes-core/onnx"]
+gdal = ["geoplumb-server/gdal"]
 
 [dependencies]
 panoptes-core = { path = "../panoptes-core" }
