@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 panoptes-core = { path = "../panoptes-core" }
 image = "0.25"
-tiff = "0.9"
+tiff = "0.11"
 ndarray = "0.16"
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
