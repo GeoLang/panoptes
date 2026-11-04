@@ -1,4 +1,10 @@
-//! Cloud-Optimized GeoTIFF (COG) streaming — read tiles from remote COG files.
+//! Cloud-Optimized GeoTIFF (COG) metadata and raw tile reads.
+//!
+//! `parse_cog_metadata` reads the IFD chain and tile offsets from a `Read + Seek`
+//! source, and `read_raw_tile` returns one tile as its stored bytes. This module
+//! has no HTTP or S3 client, no decompression and no pixel decode. Files with a
+//! TIFF magic number other than 42, BigTIFF included, return
+//! `CogError::InvalidHeader`.
 
 use std::io::{Read, Seek, SeekFrom};
 use thiserror::Error;

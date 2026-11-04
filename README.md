@@ -208,8 +208,7 @@ rest are dropped. Both classes are written to the GeoJSON, background included, 
   compositing) is library code the CLI cannot reach. `SatelliteImage` is constructed nowhere in the workspace,
   including tests, and the only file reader calls `to_rgb8()`, so every image becomes
   3-channel 8-bit RGB and no NIR or SWIR band can enter. The `Sensor` enum is a bare tag
-  with no calibration coefficients, whatever `satellite.rs`'s rustdoc says about
-  Sentinel-2 and Landsat 8/9.
+  with no calibration coefficients.
 - Object detection exists as a library result type. The threshold and ONNX engines
   produce it for a `TaskType::Detection` config, but no catalog entry or CLI command uses
   that task, and there is no non-maximum suppression.

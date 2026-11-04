@@ -1,8 +1,10 @@
-//! Satellite image processing — atmospheric correction, radiometric calibration,
-//! pan-sharpening, band indices, and mosaic compositing.
+//! Satellite image processing: DN to top-of-atmosphere reflectance, DOS1 dark
+//! object subtraction, Brovey pan-sharpening, spectral indices and mosaic
+//! compositing.
 //!
-//! Supports common satellite platforms (Sentinel-2, Landsat 8/9, etc.) with
-//! sensor-specific calibration parameters.
+//! `Sensor` is a label in `ImageMetadata` and has no effect on any result. This
+//! module has no coefficients for any sensor: `dn_to_toa_reflectance` takes gain,
+//! offset and solar irradiance as arguments in `CalibrationCoeffs`.
 
 use std::collections::HashMap;
 
@@ -28,7 +30,7 @@ pub struct ImageMetadata {
     pub bbox: [f64; 4],
 }
 
-/// Supported satellite sensors.
+/// Sensor label for `ImageMetadata`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sensor {
     Sentinel2A,
