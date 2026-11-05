@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-11-04
+
+### Fixed
+
+- the landing page said the CLI polygonizes each tile on its own. The CLI polygonizes the
+  stitched mask once
+- the landing page said "No GDAL" and left out the optional `gdal` feature on the CLI
+
+### Changed
+
+- CI and the release workflow call the reusable workflows in `GeoLang/.github`. The
+  `panoptes-<target>.tar.gz` archives are unchanged
+
 ## [Unreleased] - 2026-10-29
 
 ### Added

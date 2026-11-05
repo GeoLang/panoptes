@@ -46,7 +46,7 @@ td{color:var(--text)}
 <header>
 <div class="container">
 <h1>Panoptes</h1>
-<p class="tagline">A Rust library and CLI that segments aerial and satellite imagery and writes the result as GeoJSON polygons. No GDAL.</p>
+<p class="tagline">A Rust library and CLI that segments aerial and satellite imagery and writes the result as GeoJSON polygons. The default build needs no GDAL, and an optional <code>gdal</code> feature adds GDAL layer sources.</p>
 <p class="notice"><strong>Experimental.</strong> Building segmentation weights are published as a release asset you download into the working directory. Roads, landcover and vegetation have none, so for those you supply an ONNX model and pass it with <code>--model path/to/model.onnx</code>. Change detection runs no model at all. <a href="https://github.com/GeoLang/panoptes#model-weights">Model weights</a>.</p>
 <div class="badges">
 <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
@@ -149,7 +149,7 @@ td{color:var(--text)}
 <li>Result aggregation across tiles, blending the overlap</li>
 <li>Configurable tile size and overlap</li>
 <li>Single process, not a cluster</li>
-<li>Library only, no CLI command. The CLI runs a sequential map that polygonizes each tile on its own</li>
+<li>Library only, no CLI command. The CLI runs tiles one after another and polygonizes the stitched mask once</li>
 </ul>
 </div>
 <div class="card">

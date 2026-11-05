@@ -76,8 +76,6 @@ pub fn dn_to_toa_reflectance(
     Ok(reflectance)
 }
 
-/// DOS1 (Dark Object Subtraction) atmospheric correction.
-/// Simplest atmospheric correction — subtracts minimum radiance as path radiance.
 pub fn dos1_correction(band_data: &[f64], dark_object_percentile: f64) -> Vec<f64> {
     let mut sorted: Vec<f64> = band_data
         .iter()
