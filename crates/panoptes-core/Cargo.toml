@@ -9,7 +9,7 @@ default = []
 onnx = ["dep:ort"]
 
 [dependencies]
-ndarray = "0.16"
+ndarray = "0.17"
 ort = { version = "2.0.0-rc.12", optional = true, default-features = false, features = [
     "std",
     "load-dynamic",
