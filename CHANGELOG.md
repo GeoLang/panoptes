@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-11-28
+
+### Changed
+
+- geoplumb locked to 4414dea and terrano-core to 81d9f75. A COG input with no EPSG CRS
+  geokey fails at open, where it was read as EPSG:0. A `--layer-file` layer may use
+  geoplumb's `clip_raster` op naming another layer of the same file
+
 ## [Unreleased] - 2026-11-04
 
 ### Fixed

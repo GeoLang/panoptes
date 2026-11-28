@@ -245,7 +245,7 @@ fn pull_layer_image(request: &LayerRequest, channels: usize) -> Result<Georefere
     };
     let LayerGraph {
         mut graph, node, ..
-    } = build_layer_graph(layer)?;
+    } = build_layer_graph(layer, &config.layers)?;
     let node = graph.add_transform(node, Box::new(CrsDemand(Crs(request.crs))));
     let engine = Engine::new(graph, LAYER_CACHE_BYTES).map_err(|e| e.to_string())?;
     let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
@@ -269,6 +269,7 @@ fn pull_layer_image(request: &LayerRequest, channels: usize) -> Result<Georefere
     let mut tensor = ImageTensor::zeros((channels, height, width));
     let mut nodata = vec![false; height * width];
     for (channel, band) in raster.bands.bands().iter().enumerate() {
+        let band = band.to_raster();
         for (index, &value) in band.data().iter().enumerate() {
             if band.is_nodata(value) {
                 nodata[index] = true;

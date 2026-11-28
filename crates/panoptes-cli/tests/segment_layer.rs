@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-use terrano_core::{BandedRaster, CogParams, Raster, write_cog_bands};
+use terrano_core::{BandedRaster, CogParams, GeoKeyDirectory, Raster, write_cog_bands};
 
 const EARTH_RADIUS: f64 = 6_378_137.0;
 const WEB_MERCATOR_EDGE: f64 = 20_037_508.342_789_244;
@@ -37,7 +37,7 @@ fn write_square_cog(path: &Path, origin_x: f64, origin_y: f64) {
         tile_width: 256,
         tile_height: 256,
         overview_levels: 0,
-        epsg: 3857,
+        geo_keys: GeoKeyDirectory::projected(3857),
         origin_x,
         origin_y,
         pixel_width: PIXEL_SIZE,
